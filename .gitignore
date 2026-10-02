@@ -1,0 +1,21 @@
+# sestavená aplikace a mezivýsledky Swiftu
+dist/
+app/.build/
+.swiftpm/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# osobní data a pracovní soubory (do repozitáře nepatří)
+pogo/
+*.pem
+config.json
+pamet.json
+calibration.json
+*.jpg
+*.png
+!app/*.png

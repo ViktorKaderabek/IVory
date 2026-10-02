@@ -1,0 +1,6 @@
+Appium-Python-Client>=4.0
+selenium>=4.20
+numpy>=1.24
+opencv-python>=4.8
+pillow>=10.0
+pyobjc-framework-Vision>=10.0
