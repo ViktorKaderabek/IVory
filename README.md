@@ -43,10 +43,13 @@ Aplikace se objeví v `~/Applications/PoGo Inventory Manager.app` (bez `--instal
 
 ## Použití
 
-**Aplikace:**
+**Aplikace:** jedna obrazovka, jedno velké tlačítko.
 
-- **Spustit:** vyber, co udělat (*Duplicity + IV tagy*, *Jen duplicity*, *Jen IV tagy*), a dej *Start*. Výpis běží živě. *Stop* běh korektně ukončí a výsledky se uloží. Tlačítko *Výsledky* otevře složku se screenshoty a JSONy.
-- **Nastavení:** iPhone (UDID, Apple Team ID), uložené hledání, název tagu pro horší kusy, kolik nejlepších nechat, seznam IV tagů s hranicemi v procentech. Ukládá se samo.
+1. Vyber, co udělat: *Duplicity + IV tagy*, *Jen duplicity*, nebo *Jen IV tagy*.
+2. Klikni na **Spustit** (nebo Enter). Nahoře uvidíš, co se právě děje, pod tím dlaždice se změřenými a otagovanými kusy a postup obou fází. Podrobný výpis je schovaný pod *Podrobnosti*.
+3. **Zastavit** běh korektně ukončí a výsledky se uloží. Složka s výsledky je pod ikonou složky vpravo nahoře.
+
+**Nastavení** (ozubené kolečko vpravo nahoře) vyjede z boku: uložené hledání, tag pro horší kusy, kolik nejlepších nechat, IV tagy s hranicemi v procentech a iPhone (UDID, Apple Team ID). Ukládá se samo.
 
 **Terminál** (bez aplikace):
 

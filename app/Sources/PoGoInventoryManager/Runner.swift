@@ -192,6 +192,7 @@ final class Runner: ObservableObject {
         }
         if t.contains("ks má tag"), let n = Int(t.split(separator: " ").first { Int($0) != nil } ?? "") {
             stats.removable += n
+            activity = "Otagováno \(n) ks"
             return
         }
         if stats.phase == 2, t.hasPrefix("CP"), t.contains(" -> ") {
@@ -203,18 +204,66 @@ final class Runner: ObservableObject {
                     stats.measured += 1
                 }
             }
-            activity = t
+            activity = Self.friendlyIVLine(t) ?? t
             return
         }
         if stats.phase == 0 && (t.hasPrefix("měřím") || t.hasPrefix("── Várka")) {
             stats.phase = 1
         }
-        if t.hasPrefix("měřím") || t.hasPrefix("── Várka") || t.hasPrefix("obrazovka:") || t.hasPrefix("označuji")
-            || t.hasPrefix("Restartuji") || t.hasPrefix("Doznačuji") || t.hasPrefix("tag '") || t.hasPrefix("▶")
-            || t.hasPrefix("Připojuji") || t.hasPrefix("Obraz:") {
-            activity = t.replacingOccurrences(of: "▶ ", with: "")
+        if let nice = Self.friendlyActivity(t) {
+            activity = nice
         }
     }
+
+    /// „CP1617  Charizard   15/14/13  93%  -> 90-95% Amazing“ → „Charizard (CP1617) → 90-95% Amazing · 15/14/13 · 93 %“
+    private static func friendlyIVLine(_ t: String) -> String? {
+        let pattern = #"^CP(\d+)\s+(.+?)\s+([\d ?]+/[\d ?]+/[\d ?]+)\s+(\S+)\s+->\s+(.*)$"#
+        guard let re = try? NSRegularExpression(pattern: pattern),
+              let m = re.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
+        func g(_ i: Int) -> String {
+            guard let r = Range(m.range(at: i), in: t) else { return "" }
+            return t[r].trimmingCharacters(in: .whitespaces)
+        }
+        let iv = g(3).replacingOccurrences(of: " ", with: "")
+        let note = g(5).replacingOccurrences(of: " (IV z paměti)", with: "")
+        if iv.contains("?") { return "\(g(2)) (CP\(g(1))) – \(note)" }
+        return "\(g(2)) (CP\(g(1))) → \(note) · \(iv) · \(g(4).replacingOccurrences(of: "%", with: " %"))"
+    }
+
+    /// Řádky výpisu, které stojí za to ukázat jako „co se právě děje“.
+    private static func friendlyActivity(_ t: String) -> String? {
+        if t.hasPrefix("měřím ") {
+            let rest = t.dropFirst("měřím ".count)
+            let parts = rest.split(separator: " ", maxSplits: 1)
+            if parts.count == 2 { return "Měřím IV: \(parts[1]) (\(parts[0]))" }
+            return "Měřím IV: \(rest)"
+        }
+        if t.hasPrefix("── Várka: ") { return "Várka: " + t.dropFirst("── Várka: ".count) }
+        if t.hasPrefix("obrazovka: ") { return "Na obrazovce: " + t.dropFirst("obrazovka: ".count) }
+        if t.hasPrefix("označuji ") { return "Označuji " + t.dropFirst("označuji ".count) }
+        if t.hasPrefix("✔") { return String(t.dropFirst(2)) }
+        for prefix in ["Restartuji", "Doznačuji", "Připojuji", "Obraz:", "tag '", "▶ "] where t.hasPrefix(prefix) {
+            return t.replacingOccurrences(of: "▶ ", with: "")
+        }
+        return nil
+    }
+
+    #if PREVIEW_RENDER
+    /// Jen pro vykreslení náhledu vzhledu (swiftc -D PREVIEW_RENDER).
+    func previewState(running: Bool) {
+        isRunning = running
+        status = running ? "Běží" : "Hotovo"
+        outcome = running ? nil : .done
+        stats = Stats(measured: 37, removable: 12, ivTagged: 58, skipped: 140, errors: 1, phase: 2)
+        activity = running ? "CP1617  Charizard        15/14/13  93%  -> 90-95% Amazing" : "Hotovo – výsledky jsou ve složce pogo_runs"
+        startedAt = Date().addingTimeInterval(-1834)
+        finishedAt = running ? nil : Date()
+        for l in ["▶ Start: Duplicity + IV tagy", "── Várka: Charmander (4 ks)", "   CP691   15/14/13   93%  -> Removable ✔ otagováno",
+                  "   klepnutí: otevřít CP1617 (0.50, 0.49)", "   CP1617  Charizard        15/14/13  93%  -> 90-95% Amazing"] {
+            append(l)
+        }
+    }
+    #endif
 
     private func finished(code: Int32) {
         (process?.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil

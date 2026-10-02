@@ -9,15 +9,15 @@ struct PoGoInventoryManagerApp: App {
 
     var body: some Scene {
         WindowGroup("PoGo Inventory Manager") {
-            RootView()
+            MainView()
                 .environmentObject(store)
                 .environmentObject(runner)
-                .frame(minWidth: 900, minHeight: 640)
+                .frame(minWidth: 820, minHeight: 640)
                 .tint(Theme.teal)
         }
-        .defaultSize(width: 1080, height: 760)
+        .defaultSize(width: 1000, height: 780)
         .windowResizability(.contentMinSize)
-        .windowToolbarStyle(.unified)
+        .windowToolbarStyle(.unified(showsTitle: false))
     }
 }
 
