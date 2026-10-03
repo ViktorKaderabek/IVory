@@ -120,7 +120,7 @@ RENAME = {"min": 85, "max": 100, "template": None, "overwrite_custom": False, "s
 L = {
     "attack": "Attack", "defense": "Defense", "hp": "HP",
     "appraise": "APPRAISE", "number": "NUMBER", "done": "DONE",
-    "select_all": "SELECT ALL", "see_more": "See More",
+    "select_all": "SELECT ALL", "see_more": "See More", "mixed": "Mixed",
     "add_new_tag": "Add New Tag", "enter_tag_name": "Enter tag name",
     "menu": ["POKEDEX", "POKEMON", "SHOP", "ITEMS", "BATTLE"],
     "sort_options": ["RECENT", "FAVORITE", "NUMBER", "HP", "NAME", "COMBAT POWER"],
@@ -2079,8 +2079,10 @@ class Memory:
         self.save()
 
     def renamed(self, cp, name):
-        """Dal tomuhle kusu jméno bot? (pak to není vlastní přezdívka)"""
-        return f"{cp}|{alnum(name)}" in self.data.setdefault("renamed", {})
+        """Dal tomuhle kusu jméno bot? (pak to není vlastní přezdívka). CP se od přejmenování mohlo
+        změnit (vylepšení), proto stačí stejné jméno."""
+        n, done = alnum(name), self.data.setdefault("renamed", {})
+        return bool(n) and (f"{cp}|{n}" in done or any(k.split("|", 1)[-1] == n for k in done))
 
     def set_renamed(self, cp, name):
         self.data.setdefault("renamed", {})[f"{cp}|{alnum(name)}"] = time.time()
@@ -2599,29 +2601,49 @@ def wait_checked(bot, fr, name, timeout=0.8):
     return bot.wait_for(on, timeout, label=f"fajfka {name}")
 
 
+def row_state(f, name):
+    """Řádek tagu name ve výběru tagů: "on" (zelená fajfka), "mixed" (výběr více Pokémonů, tag má jen
+    část z nich – vpravo šedé „Mixed“), "off", nebo None (řádek není vidět)."""
+    t = tag_row(f.texts, name)
+    if t is None:
+        return None
+    if row_checked(f.img, t):
+        return "on"
+    if find_text(f.texts, [L["mixed"]], exact=True, region=(0.55, t["cy"] - 0.03, 1.0, t["cy"] + 0.03)):
+        return "mixed"
+    return "off"
+
+
 def set_row(bot, fr, name, checked):
     """Ve výběru tagů zaškrtne řádek tagu name (checked=True), nebo ho odškrtne, a ověří to na dalších
     snímcích. Na řádek, který už ve správném stavu je, neklepe – klepnutí by ho přepnulo (přidávaný
-    tag by tím Pokémonům odebralo). Když se stav nastavit nedaří, vyhodí StepError: DONE se pak
-    nestiskne a výběr se zavře bez uložení."""
-    def state(f):
-        t = tag_row(f.texts, name)
-        return None if t is None else row_checked(f.img, t)
+    tag by tím Pokémonům odebralo). „Mixed“ (tag má jen část vybraných) se klepnutím přepne na nic,
+    teprve další klepnutí ho dá všem – proto se klepe, dokud řádek neukáže, co má. Když se stav
+    nastavit nedaří, vyhodí StepError: DONE se pak nestiskne a výběr se zavře bez uložení."""
+    want = "on" if checked else "off"
     what = "tag" if checked else T("odebrat", "remove")
-    taps, waited = 0, False
-    for _ in range(7):                       # nanejvýš 2 posuny a 2 klepnutí, pak poslední kontrola
+    taps, waited, noted = 0, False, False
+    for _ in range(9):                       # nanejvýš 2 posuny a 3 klepnutí, pak poslední kontrola
         fr = bot.settle(fr, region=LIST_REGION, timeout=0.8)
         t = tag_row(fr.texts, name)
         if t is None:
             raise StepError(T(f"ve výběru tagů nevidím {name}", f"can't see {name} in the tag picker"))
-        if row_checked(fr.img, t) == checked:
+        s = row_state(fr, name)
+        if s == want:
             if taps == 0 and checked:
                 log(T(f"   tag {name} už je zaškrtnutý – neklepu na něj (odebral by se)",
                       f"   tag {name} is already checked – not tapping it (that would remove it)"))
+            if taps >= 2:
+                bot.dump("tagy")                # pro kontrolu, jak hra přepíná „Mixed“
             return fr
-        if taps == 2:
+        if taps == 3:
             break
-        if checked and not waited:
+        if s == "mixed" and not noted:
+            noted = True
+            log(T(f"   tag {name}: má ho jen část vybraných (Mixed) – " + ("dám ho všem" if checked else "odeberu ho všem"),
+                  f"   tag {name}: only some of the selected have it (Mixed) – " +
+                  ("giving it to all" if checked else "removing it from all")))
+        if checked and s == "off" and not waited:
             # fajfka se může ukázat až chvilku po otevření výběru – klepnutí by tag odebralo
             waited = True
             on, fr = wait_checked(bot, fr, name)
@@ -2637,7 +2659,9 @@ def set_row(bot, fr, name, checked):
                 continue
         t0 = bot.tap(t["cx"], t["cy"], f"{what} {name}" + (T(" (znovu)", " (again)") if taps else ""), fr=fr)
         taps += 1
-        _, fr = bot.wait_for(lambda f: state(f) == checked, 1.5, after=t0 + FRAME_LAG, label=f"{what} {name}")
+        # počkat na změnu (z „Mixed“ se klepnutím stane nic, ne fajfka) – o dalším klepnutí rozhodne smyčka
+        _, fr = bot.wait_for(lambda f: row_state(f, name) not in (s, None), 1.5, after=t0 + FRAME_LAG,
+                             label=f"{what} {name}")
     raise StepError(T(f"tag {name} se ve výběru nedaří {'zaškrtnout' if checked else 'odškrtnout'} – nic neukládám",
                       f"can't {'check' if checked else 'uncheck'} tag {name} in the picker – saving nothing"))
 
@@ -3622,7 +3646,7 @@ def tag_batch(bot, seq, idxs, tag, remove=False, base=None):
         row, fr = scan_tag_list(bot, fr, ["dolů", "nahoru"], tag)
         if row is not None:
             on, fr = wait_checked(bot, fr, tag)      # fajfka se může ukázat až chvilku po otevření výběru
-            if on:
+            if on or row_state(fr, tag) == "mixed":  # „Mixed“: má ho jen část vybraných – i těm ho odebrat
                 fr = set_row(bot, fr, tag, False)
     else:
         fr = pick_tag(bot, fr, tag)

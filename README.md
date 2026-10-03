@@ -79,32 +79,32 @@ measured IVs are remembered for a few hours.
 
 ## Screenshots
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ready-dark.webp">
+    <img src="docs/screenshots/ready-light.webp" alt="IVory ready to start" width="820">
+  </picture><br>
+  <sub><b>Ready.</b> Tick the steps and press <i>Start</i> (or Enter).</sub>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/done-dark.webp">
+    <img src="docs/screenshots/done-light.webp" alt="IVory after a finished run" width="820">
+  </picture><br>
+  <sub><b>Done.</b> The tiles and the <i>Tags in your storage</i> panel stay as a summary of the run.</sub>
+</p>
+
 <table>
   <tr>
-    <td width="50%" valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ready-dark.webp">
-        <img src="docs/screenshots/ready-light.webp" alt="IVory ready to start">
-      </picture><br>
-      <sub><b>Ready.</b> Tick the steps and press <i>Start</i> (or Enter).</sub>
-    </td>
-    <td width="50%" valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/done-dark.webp">
-        <img src="docs/screenshots/done-light.webp" alt="IVory after a finished run">
-      </picture><br>
-      <sub><b>Done.</b> The tiles and the <i>Tags in your storage</i> panel stay as a summary of the run.</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
+    <td width="40%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.webp">
         <img src="docs/screenshots/settings-light.webp" alt="IVory settings with PvP leagues and renaming">
       </picture><br>
       <sub><b>Settings.</b> PvP leagues with rank limits and tag colors, the IV range for renaming and the name template.</sub>
     </td>
-    <td width="50%" valign="top">
+    <td width="60%" valign="top">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.webp">
         <img src="docs/screenshots/editor-light.webp" alt="Name template editor">

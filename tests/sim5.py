@@ -110,6 +110,8 @@ class Phone:
         self.tags = {n: c for n, c in existing_tags}              # název -> barva (tagy ve hře)
         self.created = []; self.queries = []; self.taps = 0; self.bad = []; self.events = []; self.renamed = []
         self.appraisals = 0; self.nexts = 0                    # kolikrát se otevřel appraisal / klepla šipka ▶
+        self.hide_chips = set()                                # štítky tagů, které v detailu OCR „přehlédne“
+        self.mixed = set(); self.touched = set()               # výběr více Pokémonů: tag má jen část („Mixed“)
         self.dlg_color = "blue"
         class CE:
             def get_command(s, n): return ("POST", "/x")
@@ -244,6 +246,8 @@ class Phone:
         text_c(d, 0.5, 0.422, m["name"], F(66, True), (60, 70, 70))
         x = 0.12
         for t in sorted(m["tags"]):
+            if t in self.hide_chips:
+                continue
             w = d.textlength(t, font=F(36)) / W + 0.06
             d.rounded_rectangle([int(x * W), int(0.493 * H), int((x + w) * W), int(0.527 * H)], 40, fill=GAME_COLORS.get(self.tags.get(t, "blue"), (90, 170, 230)))
             d.text((int((x + 0.03) * W), int(0.497 * H)), t, font=F(36), fill=(255, 255, 255)); x += w + 0.02
@@ -296,6 +300,8 @@ class Phone:
             box = [int(0.86 * W), int((y - 0.014) * H), int(0.86 * W) + int(0.028 * H), int((y + 0.014) * H)]
             if name in self.checked and time.time() - self.list_opened >= self.check_delay:
                 d.ellipse(box, fill=(40, 180, 120))
+            elif name in self.mixed:
+                text_l(d, 0.74, y, "Mixed", F(44), (150, 155, 155))
             else: d.ellipse(box, outline=(170, 175, 175), width=4)
         d.rectangle([0, 0, W, int(0.22 * H)], fill=(250, 252, 250))
         text_c(d, 0.5, 0.084, f"TAG {len(self.list_targets)} POKÉMON", F(44), (90, 100, 100))
@@ -385,13 +391,18 @@ class Phone:
     def open_list(self, targets, ret):
         self.list_targets = list(targets); self.list_return = ret; self.list_off = 0.0
         common = set.intersection(*[self.mons[i]["tags"] for i in targets]) if targets else set()
+        union = set.union(*[self.mons[i]["tags"] for i in targets]) if targets else set()
         self.checked = set(common); self.initial = set(common); self.state = "taglist"
+        self.mixed = (union - common) if len(targets) > 1 else set(); self.touched = set()
         self.list_opened = time.time()
 
     def done_list(self):
+        # jako hra: zaškrtnuté dostanou všichni; co se klepnutím vypnulo (i z „Mixed“), všem se odebere;
+        # nedotčené „Mixed“ zůstane, jak je
+        off = {nm for nm in self.touched if nm not in self.checked and nm not in self.mixed}
         for i in self.list_targets:
             self.mons[i]["tags"] |= self.checked
-            self.mons[i]["tags"] -= (self.initial - self.checked)
+            self.mons[i]["tags"] -= (self.initial - self.checked) | off
         if self.done_stuck and self.list_return == "grid" and self.checked - self.initial:
             # tagy se uložily, ale výběr tagů zůstane viset – bot to vezme jako chybu a dávku zopakuje;
             # vybraní už tag mají, takže ho při opakování nesmí odškrtnout
@@ -570,8 +581,10 @@ class Phone:
                 if abs(y - self.row_y(k)) < 0.025 and 0.24 < self.row_y(k) < 0.80:
                     if nm.startswith("+"):
                         self.state, self.typed, self.kb, self.dlg_color = "create", "", self.kb_auto, "blue"
+                    elif nm in self.mixed:
+                        self.mixed.discard(nm); self.touched.add(nm)      # „Mixed“ → nic (jako hra)
                     else:
-                        self.checked ^= {nm}
+                        self.checked ^= {nm}; self.touched.add(nm)
                     return
         elif st == "create":
             if self.kb and y > 0.62: return
@@ -633,6 +646,9 @@ def make_mons(seed, big=0):
     return mons
 
 
+DEFAULT_IV_TAGS, DEFAULT_TEMPLATE = list(S.IV_TAGS), list(S.RENAME["template"] or [])
+
+
 class Args:
     max_groups = 0; fresh = False; only_iv = False; no_iv = False
     steps = {"duplicates", "iv", "pvp", "rename"}
@@ -640,15 +656,24 @@ class Args:
 
 def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, inject=False, **variant):
     rerun = variant.pop("rerun", False)       # druhý běh se stejnou pamětí (a jednou nově chycenou Eevee)
+    mixed = variant.pop("mixed", False)       # část kusů má Master League „od včera“ a bot jeho štítek nevidí
     mons = make_mons(seed, variant.get("big", 0)); init = [set(m["tags"]) for m in mons]
     existing = [("Mega", "orange"), ("100% Perfect", "purple"), ("95-99% Insane", "blue"),
                 ("70-0% Garbage", "black")]                         # ostatní tagy ve hře chybí
+    if mixed:
+        existing.append(("Master League", "purple"))
     phone = Phone(mons, seed, existing_tags=existing, **variant)
     run_dir = TMP / f"run_{name}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     S.SEARCH_QUERY = QUERY
     S.RECHECK_TAGGED = True                  # jako tvoje nastavení: otagované taky zkontrolovat
     for lg, mx in (("great", 1500), ("ultra", 1500), ("master", 300)):   # vyšší hranice, ať je co tagovat
         S.PVP[lg]["max_rank"] = mx
+    if mixed:
+        wants = [i for i, m in enumerate(mons)
+                 if (PC.league_rank(m["sp"].lower(), m["iv"], "master") or (9999,))[0] <= S.PVP["master"]["max_rank"]]
+        for i in wants[::2]:                          # každý druhý ho už má – výběr bude „Mixed“
+            mons[i]["tags"].add("Master League"); init[i].add("Master League")
+        phone.hide_chips = {"Master League"}
     log = S.log
     if not verbose:
         S.log = lambda msg="": None
@@ -674,11 +699,17 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         S.run(bot, book, book2, mem, args, rep)
         if rerun:
             first = (time.time() - t0, phone.appraisals, phone.nexts)
-            # mezi běhy přibude nově chycená Eevee – vznikne nová duplicita a nový kus k přečtení
-            new = {"sp": "Eevee", "iv": (15, 14, 13), "level": 21.0, "name": "Eevee", "tags": set()}
-            fill_stats(new)
-            k = max(i for i, m in enumerate(mons) if m["sp"] == "Eevee") + 1
-            mons.insert(k, new); init.insert(k, set())
+            if rerun == "config":
+                # mezi běhy se změní nastavení: jiné hranice IV tagů a jiná šablona jména
+                S.IV_TAGS = [(100, "100% Perfect"), (95, "95-99% Insane"), (91, "90-95% Amazing"),
+                             (86, "85-90% Great"), (81, "80-85% Good"), (70, "70-80% Mid"), (0, "70-0% Garbage")]
+                S.RENAME["template"] = [{"k": "iv"}, {"k": "space"}, {"k": "short"}]
+            else:
+                # mezi běhy přibude nově chycená Eevee – vznikne nová duplicita a nový kus k přečtení
+                new = {"sp": "Eevee", "iv": (15, 14, 13), "level": 21.0, "name": "Eevee", "tags": set()}
+                fill_stats(new)
+                k = max(i for i, m in enumerate(mons) if m["sp"] == "Eevee") + 1
+                mons.insert(k, new); init.insert(k, set())
             phone.state, phone.filtered, phone.query, phone.off, phone.kb, phone.typed = "map", False, "", 0.0, False, ""
             a0, n0, t1 = phone.appraisals, phone.nexts, time.time()
             bot = S.Bot(phone, run_dir); bot.udid = "SIM"; bot.fast = fast
@@ -691,6 +722,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     finally:
         S.log = log
         S.grid_scan = orig_scan
+    template = S.RENAME["template"] or PC.DEFAULT_TEMPLATE      # šablona, která platila na konci
     # --- očekávání
     ghost = {phone.ghost_idx} if phone.ghost_idx is not None else set()
     ivnames = {n for _, n in S.IV_TAGS}
@@ -719,7 +751,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
             pct = round(sum(m["iv"]) * 100 / 45)
             want = m["sp"] if m["sp"] != "" else ""
             if 85 <= pct <= 100 and i != 10:
-                want = PC.render_name(PC.DEFAULT_TEMPLATE, PC.chip_values(PC.info(sid, m["iv"], m["level"], m["cp"]), m["iv"]))
+                want = PC.render_name(template, PC.chip_values(PC.info(sid, m["iv"], m["level"], m["cp"]), m["iv"]))
             elif i == 10:
                 want = "Kytka"
             if m["name"] != want:
@@ -741,6 +773,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
           f"klepnutí={phone.taps} | události={phone.events[:5]} | {time.time() - t0:.0f}s" +
           (f" | 1. běh {first[0]:.0f}s, appraisal {first[1]}×, ▶ {first[2]}× | 2. běh {second[0]:.0f}s, "
            f"appraisal {second[1]}×, ▶ {second[2]}×" if first and second else ""), flush=True)
+    S.IV_TAGS, S.RENAME["template"] = list(DEFAULT_IV_TAGS), list(DEFAULT_TEMPLATE)   # další scénáře s výchozím
     return ok
 
 
@@ -767,6 +800,8 @@ SCENARIOS = {
     "tag_uz_maji": dict(big=1, done_stuck=1, check_delay=0.6, steps=["iv", "pvp"]),
     "opakovany_beh": dict(big=1, rerun=True),
     "opakovany_beh_realny": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True),
+    "zmena_nastaveni": dict(big=1, rerun="config"),
+    "mixed_tagy": dict(big=1, mixed=True, steps=["pvp"]),
 }
 
 if __name__ == "__main__":
