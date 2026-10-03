@@ -14,7 +14,7 @@
   <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-app-F05138?logo=swift&logoColor=white">
   <img alt="Python 3" src="https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white">
   <img alt="Appium XCUITest" src="https://img.shields.io/badge/Appium-XCUITest-662D91?logo=appium&logoColor=white">
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/ViktorKaderabek/IVory?color=2f8f5b"></a>
+  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-2f8f5b"></a>
 </p>
 
 <p align="center">
@@ -331,10 +331,15 @@ If you already used Appium before IVory, keep `~/.appium`.
 
 ## License
 
-IVory is open source under the [MIT License](LICENSE). You can use, change and share it, also commercially,
-as long as you keep the copyright notice. © 2026 Viktor Kadeřábek.
+IVory is free for **noncommercial use** under the [PolyForm Noncommercial License 1.0.0](LICENSE). © 2026 Viktor Kadeřábek.
 
-Contributions are welcome. By opening a pull request you agree that your contribution is released under the same license.
+- ✅ You can use it for yourself, study the code, change it and share it, as long as you keep the license and the copyright notice.
+- ❌ You can't sell it, offer it as a paid service or use it in a commercial product.
+
+Want to use IVory commercially? [Open an issue](https://github.com/ViktorKaderabek/IVory/issues) and ask.
+
+Contributions are welcome. By opening a pull request you agree that your contribution is released under the same license
+and that the author may also license it under other terms.
 
 ## Disclaimer
 
