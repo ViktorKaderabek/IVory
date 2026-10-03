@@ -14,6 +14,7 @@ from .screens import (
     multiselect_on, return_key, safe_button, search_bar_text, search_count, sort_active, sort_menu_on,
     tag_list_on, transfer_dialog)
 from .session import ensure_app, restart_game
+from .detail import cancel_nickname
 
 
 # --- Getting to the storage ---
@@ -144,6 +145,10 @@ def handle_unknown(bot, fr, attempt):
 def nav_step(bot, st, fr, attempt):
     """One step towards the storage. Returns the frame once the storage is ready (search + sorting)."""
     tx = fr.texts
+    if st == "nickname_dialog":
+        # an unfinished renaming: CANCEL keeps the old name (taps at the bottom would type into it)
+        cancel_nickname(bot, fr)
+        return None
     if keyboard_on(tx) and st not in ("search_page", "transfer_dialog", "confirm_dialog"):
         # the keyboard is open (e.g. after an unfinished tag creation) – hide it first,
         # otherwise taps near the bottom would hit keys

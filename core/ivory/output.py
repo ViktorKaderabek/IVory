@@ -14,6 +14,7 @@ STATE_NAMES = {   # screen: (Czech, English)
     "sort_menu": ("řazení", "sort menu"), "box": ("inventář", "storage"),
     "box_tags": ("inventář – záložka Tagy", "storage – Tags tab"), "search_page": ("hledání v inventáři", "storage search"),
     "box_other": ("inventář (žádní Pokémoni)", "storage (no Pokémon)"), "main_menu": ("hlavní menu", "main menu"),
+    "nickname_dialog": ("přejmenování (bot ho zruší)", "renaming dialog (the bot cancels it)"),
     "map": ("mapa", "map"), "unknown": ("neznámá obrazovka", "unknown screen"),
 }
 

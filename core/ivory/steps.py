@@ -4,14 +4,14 @@ import time
 import pokecalc
 
 from . import config as cfg
-from .errors import Fatal, LostPosition, NeedTop, NotInSearch, StepError
+from .errors import Fatal, LostPosition, NameRefused, NeedTop, NotInSearch, StepError
 from .output import emit, log, pct_text, pokemon_count, step, T
 from .vision import alnum, find_text
 from .grid import make_runs, names_ok, sprite_sim
-from .screens import detail_cp, detail_hp, detail_name, keyboard_on
+from .screens import detail_cp, detail_hp, detail_name, keyboard_on, name_refused, nickname_dialog
 from .navigation import ensure_box
 from .records import decide_group, Rec
-from .detail import close_detail
+from .detail import cancel_nickname, close_detail
 from .tags import confirm_button, iv_tag
 from .scan import grid_scan, scan_details
 from .batch import empty_search, mark_missing, run_passes, search_view, show_search
@@ -260,7 +260,8 @@ def fast_pvp(bot, mem, args, report, st):
 
 def rename_here(bot, fr, new):
     """Open detail screen → tap the name → clear it → type the new name → confirm → check it on the detail
-    screen."""
+    screen. When the game refuses the name ("This name contains inappropriate text"), closes the dialog with
+    CANCEL and the detail screen, and raises NameRefused."""
     fr = bot.settle(fr)
     old = detail_name(fr.texts)
     t = find_text(fr.texts, [old], exact=True, region=(0.15, 0.36, 0.85, 0.48)) if old else None
@@ -279,14 +280,23 @@ def rename_here(bot, fr, new):
     bot.type_text(new)
     t0 = time.time()
     bot.type_text("\n")
-    named = lambda f: not keyboard_on(f.texts) and alnum(detail_name(f.texts)) == alnum(new)
-    ok, fr = bot.wait_for(named, 3, after=t0 + cfg.FRAME_LAG, label="nové jméno")
+    named = lambda f: (not keyboard_on(f.texts) and not nickname_dialog(f.texts)
+                       and alnum(detail_name(f.texts)) == alnum(new))
+    over = lambda f: named(f) or name_refused(f.texts)
+    ok, fr = bot.wait_for(over, 3, after=t0 + cfg.FRAME_LAG, label="nové jméno")
     if not ok and not keyboard_on(fr.texts):
         d = confirm_button(fr.texts)       # the game may want an OK to confirm
         if d is not None:
             t0 = bot.tap(d["cx"], d["cy"], T(f"potvrdit jméno ({d['text']})", f"confirm the name ({d['text']})"), fr=fr)
-            ok, fr = bot.wait_for(named, 3, after=t0 + cfg.FRAME_LAG, label="nové jméno")
+            # the game checks the name on its server, so a refusal may take a few seconds
+            ok, fr = bot.wait_for(over, 8, after=t0 + cfg.FRAME_LAG, label="nové jméno")
+    if name_refused(fr.texts):
+        cancel_nickname(bot, fr)
+        close_detail(bot)
+        raise NameRefused(T(f"hra jméno „{new}“ odmítla (nevhodný text)", f"the game refused the name “{new}” (inappropriate text)"))
     if not ok:
+        if nickname_dialog(fr.texts):
+            cancel_nickname(bot, fr)       # going back to the storage with the dialog open would tap the keyboard
         raise StepError(T(f"jméno „{new}“ se neuložilo (v detailu: {detail_name(fr.texts)!r})",
                           f"the name “{new}” didn't save (the detail shows {detail_name(fr.texts)!r})"))
     close_detail(bot, fr)
@@ -356,6 +366,12 @@ def fast_rename(bot, mem, args, report, st):
                 emit("rename", cp=rec["cp"], old=cur, new=None, skipped="custom")
                 skipped += 1
                 continue
+            if mem.refused_name(new):
+                log(f"   CP{rec['cp']:<5} {pct_text(pct)}  {cur} · " +
+                    T(f"jméno „{new}“ hra už jednou odmítla, přeskakuji", f"the game refused the name “{new}” before, skipping"))
+                emit("rename", cp=rec["cp"], old=cur, new=None, skipped="refused")
+                skipped += 1
+                continue
             st.rename_todo.append((i, new))
         st.rename_skipped = skipped
         st.rename_planned = True
@@ -401,6 +417,20 @@ def fast_rename(bot, mem, args, report, st):
                 log(f"   ✖ CP{rec['cp']} {rec.get('name')}: " +
                     T("ve výsledcích hledání ho nevidím (CP se asi přečetlo špatně), přeskakuji",
                       "not in the search results (probably a misread CP), skipping"))
+                continue
+            except NameRefused:                # the same name would be refused again – no second try
+                st.rename_todo.pop(0)
+                st.rename_fails = 0
+                st.rename_skipped += 1
+                mem.set_refused_name(new)
+                log(f"   ✖ CP{rec['cp']} {rec.get('name')}: " +
+                    T(f"hra jméno „{new}“ odmítla (nevhodný text), nechávám původní",
+                      f"the game refused the name “{new}” (inappropriate text), keeping the old one"))
+                emit("rename", cp=rec["cp"], old=rec.get("name"), new=None, skipped="refused")
+                emit("problem", text=T(f"Hra odmítla jméno „{new}“ pro CP{rec['cp']} {rec.get('name')} (prý nevhodný "
+                                       f"text). Pokémon má dál původní jméno – přejmenuj ho ručně.",
+                                       f"The game refused the name “{new}” for CP{rec['cp']} {rec.get('name')} "
+                                       f"(inappropriate text, it says). The Pokémon keeps its name – rename it yourself."))
                 continue
             except (Fatal, NeedTop, LostPosition):
                 raise

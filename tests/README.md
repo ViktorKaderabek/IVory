@@ -53,6 +53,7 @@ PvP tags, renaming, and closing the storage by swiping down. It evaluates search
 | `rerun_long_names` | also renames every Pokémon to a long name ("MAX 3351 L15") that OCR, as on the iPhone, merges with the neighboring cell into one text; the second run must still recognize them from memory and read at most 4 Pokémon |
 | `settings_changed` | the IV tag limits and the name template change between two runs |
 | `mixed_tags` | some Pokémon already have the Master League tag, so the selection shows "Mixed" and the bot cannot see the chip |
+| `name_refused` | the game refuses one name ("This name contains inappropriate text") and, as in the game, Enter only hides the keyboard and OK saves the name; the bot must close the dialog with CANCEL, never tap the keyboard, not try again, and skip that name on the next run |
 | `twins_same_cp` | two Kyogre with the same CP that the search shows in the opposite order to the full list; the bot checks CP, name and HP on the detail screen and each gets a name computed from its own IVs |
 
 ## Running

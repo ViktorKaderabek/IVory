@@ -279,6 +279,7 @@ flowchart LR
 - **PvP rank** = position of the Pokémon's IV combination among all 4,096 for the league (1 = best), at the highest level that stays under the CP cap (1,500 Great, 2,500 Ultra, none for Master), for its final evolution (with branching evolutions, the best branch).
 - **Name pieces:** IV % (`91`), IV values (`14/13/14`), level (`L15`), species (`Baxcalibur`), short species (first 6 letters), final evolution (first 3 letters, `Bax`), CP after evolution, max CP at level 50, league ranks (`G12`, `U5`, `M30`), custom text, and separators (space, `-`, `|`). Names longer than 12 characters are cut.
 - **Custom nickname** = a name that is neither the species name nor a name IVory gave earlier. Such Pokémon are skipped unless you turn on *Overwrite custom nicknames too*.
+- **Refused names:** the game's word filter sometimes refuses a name, even one shaped like the others ("This name contains inappropriate text"). IVory then cancels the dialog, leaves the old name, tells you to rename that Pokémon yourself and doesn't try that name again.
 
 </details>
 

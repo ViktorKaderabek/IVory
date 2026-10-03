@@ -28,6 +28,16 @@ def confirm_dialog(tx):
     return bool(find_text(tx, ["do you want to", "are you sure"]) and find_text(tx, ["no", "cancel"], exact=True))
 
 
+def nickname_dialog(tx):
+    """The Set Nickname dialog (renaming) is open – with or without the keyboard over the screen."""
+    return bool(find_text(tx, [cfg.L["set_nickname"]], region=(0.0, 0.2, 1.0, 0.55)))
+
+
+def name_refused(tx):
+    """The game refused the new nickname ("This name contains inappropriate text.")."""
+    return bool(find_text(tx, cfg.L["name_refused"]))
+
+
 def box_header(tx):
     top = (0.0, 0.0, 1.0, 0.18)
     return bool((find_text(tx, ["eggs"], exact=True, region=top) or find_text(tx, ["tags"], exact=True, region=top))
@@ -149,6 +159,8 @@ def classify(fr):
         return "transfer_dialog"
     if confirm_dialog(tx):
         return "confirm_dialog"
+    if nickname_dialog(tx):
+        return "nickname_dialog"    # over the detail screen, whose texts show through
     if find_text(tx, [cfg.L["enter_tag_name"]]):
         return "tag_dialog"
     if tag_list_on(tx):

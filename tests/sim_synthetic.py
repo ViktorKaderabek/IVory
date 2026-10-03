@@ -90,7 +90,7 @@ class Phone:
     def __init__(self, mons, seed=1, glitch=0.0, kb_auto=False, return_submits=False, two_rows=False,
                  auto_check=False, existing_tags=(), nav=True, swipe_closes=False, gain=1.0, cp_flaky=0.0,
                  select_all=False, multi_fling=0.0, big=0, select_all_search=True, ghost=0, done_stuck=0,
-                 check_delay=0.0, twins_rev=False):
+                 check_delay=0.0, twins_rev=False, ok_needed=False, refuse=()):
         self.twins_rev = twins_rev                            # search results reverse Pokémon of the same species and CP
         self.mons = mons; self.rnd = random.Random(seed); self.glitch = glitch
         self.gain = gain                                      # the list moves gain× further than the finger (iPhone ~1.6)
@@ -104,6 +104,9 @@ class Phone:
         self.ghost, self.ghost_idx = ghost, None              # Pokémon whose CP the bot misreads (1 = in a batch, 2 = alone)
         self.done_stuck = done_stuck                          # DONE saves the tags, but the tag picker stays open
         self.check_delay = check_delay                        # check marks in the tag picker appear only after a moment
+        self.ok_needed = ok_needed                            # like the game: Enter only hides the keyboard, OK saves the name
+        self.refuse = set(refuse)                             # names the game refuses ("inappropriate text")
+        self.refusals = []; self.refused_shown = False
         self.list_opened = 0.0
         self.state = "map"; self.filtered = False; self.query = ""; self.off = 0.0; self.sel = set(); self.cur = None
         self.sorted = False; self.kb = False; self.typed = ""
@@ -361,12 +364,19 @@ class Phone:
         if st == "intro": return png(self.render_detail(bubble=True))
         if st == "bars": return png(self.render_detail(bars=True))
         if st == "dmenu": return png(self.render_dmenu())
-        if st == "rename":
+        if st == "rename":                                    # the game's Set Nickname dialog
             img = self.render_detail(); d = ImageDraw.Draw(img)
-            d.rounded_rectangle([int(0.08 * W), int(0.30 * H), int(0.92 * W), int(0.50 * H)], 30, fill=(255, 255, 255), outline=(150, 160, 160), width=3)
-            text_c(d, 0.5, 0.34, "NICKNAME", F(40, True), (90, 100, 100))
-            text_c(d, 0.5, 0.42, self.typed or " ", F(54), (40, 40, 40))
-            keyboard(d, "done")
+            d.rounded_rectangle([int(0.03 * W), int(0.34 * H), int(0.97 * W), int(0.66 * H)], 30, fill=(255, 255, 255), outline=(150, 160, 160), width=3)
+            text_c(d, 0.5, 0.38, "Set Nickname", F(40), (90, 100, 100))
+            d.rounded_rectangle([int(0.12 * W), int(0.42 * H), int(0.88 * W), int(0.47 * H)], 30, outline=(80, 190, 190), width=3)
+            text_c(d, 0.5, 0.445, self.typed or " ", F(48), (40, 40, 40))
+            if self.refused_shown:
+                text_c(d, 0.5, 0.50, "This name contains inappropriate text.", F(34), (90, 100, 100))
+            d.rounded_rectangle([int(0.12 * W), int(0.515 * H), int(0.88 * W), int(0.565 * H)], 40, fill=(120, 210, 160))
+            text_c(d, 0.5, 0.54, "OK", F(44, True), (255, 255, 255))
+            text_c(d, 0.5, 0.61, "CANCEL", F(40, True), (60, 170, 150))
+            if self.kb:
+                keyboard(d, "done")
             return png(img)
         if st == "taglist": return png(self.render_list())
         if st == "create": return png(self.render_create())
@@ -444,13 +454,21 @@ class Phone:
             if self.auto_check: self.checked.add(name)
         self.state, self.typed, self.kb = "taglist", "", False
 
+    def submit_name(self):
+        name = self.typed.strip()
+        if name in self.refuse:                               # the dialog stays open with the game's message
+            self.refusals.append(name); self.refused_shown, self.kb = True, False
+            return
+        if name:
+            self.mons[self.cur]["name"] = name[:12]; self.renamed.append(name)
+        self.state, self.typed, self.kb, self.refused_shown = "detail", "", False, False
+
     def keys(self, txt):
         if self.state == "rename":
             for ch in txt:
                 if ch == "\n":
-                    if self.typed.strip():
-                        self.mons[self.cur]["name"] = self.typed.strip()[:12]; self.renamed.append(self.typed.strip())
-                    self.state, self.typed = "detail", ""
+                    if self.ok_needed: self.kb = False
+                    else: self.submit_name()
                     return
                 elif ch == "\b": self.typed = self.typed[:-1]
                 else: self.typed += ch
@@ -549,10 +567,13 @@ class Phone:
                     if hold: self.state, self.sel = "multi", {i}
                     else: self.state, self.cur = "detail", i
         elif st == "rename":
-            if self.kb and y > 0.62: return
-            if not (0.08 < x < 0.92 and 0.30 < y < 0.50): self.state, self.typed = "detail", ""   # cancel
+            if self.kb and y > 0.62:
+                self.bad.append("keyboard tapped in the Set Nickname dialog"); return   # it would type into the name
+            if near(.5, .54, .38, .025): self.submit_name()
+            elif near(.5, .61, .2, .02): self.state, self.typed, self.kb, self.refused_shown = "detail", "", False, False
+            # like the game: a tap outside the dialog does nothing
         elif st == "detail":
-            if near(.5, .422, .3, .025): self.state, self.typed = "rename", self.mons[self.cur]["name"]; return
+            if near(.5, .422, .3, .025): self.state, self.typed, self.kb = "rename", self.mons[self.cur]["name"], True; return
             if near(.87, .94, .08, .04): self.state = "dmenu"
             elif near(.5, .94, .05, .03): self.state = "grid"
             elif near(.5, .80, .45, .025): self.bad.append("EVOLVE row")
@@ -682,6 +703,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     mixed = variant.pop("mixed", False)       # some have Master League "since yesterday" and the bot cannot see its chip
     merge = variant.pop("merge_names", False) # OCR merges long names of neighboring cells (like the iPhone)
     max_reads = variant.pop("max_reads", None)    # the second run may read at most this many Pokémon (appraisal + ▶)
+    refuse_first = variant.pop("refuse_first", False)   # the game refuses the name of the first Pokémon to rename
     old_min = S.RENAME["min"]
     S.RENAME["min"] = variant.pop("rename_min", old_min)
     if variant.get("template"):
@@ -697,6 +719,13 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     if mixed:
         existing.append(("Master League", "purple"))
     phone = Phone(mons, seed, existing_tags=existing, **variant)
+    refused = None
+    if refuse_first:
+        tpl = S.RENAME["template"] or PC.DEFAULT_TEMPLATE
+        i = next(i for i, m in enumerate(mons) if S.RENAME["min"] <= round(sum(m["iv"]) * 100 / 45) <= S.RENAME["max"] and i != 10)
+        m = mons[i]
+        refused = PC.render_name(tpl, PC.chip_values(PC.info(m["sp"].lower(), m["iv"], m["level"], m["cp"]), m["iv"]))
+        phone.refuse = {refused}
     run_dir = TMP / f"run_{name}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     S.SEARCH_QUERY = QUERY
     S.RECHECK_TAGGED = True                  # as in the author's settings: recheck tagged ones too
@@ -790,6 +819,8 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
                 want = PC.render_name(template, PC.chip_values(PC.info(sid, m["iv"], m["level"], m["cp"]), m["iv"]))
             elif i == 10:
                 want = "Kytka"
+            if want == refused:
+                want = m["sp"]                   # the game refused the name: the Pokémon keeps its own
             if m["name"] != want:
                 bad_name.append((i, m["sp"], m["iv"], m["name"], want))
     other_lost = [i for i, m in enumerate(mons) if (init[i] - ivnames - lgnames - {S.TAG_NAME}) - m["tags"]]
@@ -802,9 +833,11 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         and ("duplicates" not in st_used or phone.queries) and all(query_ok(q) for q in phone.queries) \
         and (not variant.get("ghost") or ghost) and not phone.done_stuck \
         and (not rerun or (second is not None and second[1] <= 3)) \
-        and (max_reads is None or (second is not None and second[1] + second[2] <= max_reads))
+        and (max_reads is None or (second is not None and second[1] + second[2] <= max_reads)) \
+        and (not refused or (phone.refusals == [refused] and S.Memory(S.MEMORY_FILE).refused_name(refused)))
     print(f"{'OK ' if ok else 'FAIL'} {name:28s} error={err} | Removable wrong={bad_rem} | IV wrong={bad_iv} | "
           f"PvP wrong={bad_pvp} | names wrong={bad_name} | renamed={phone.renamed} | "
+          f"{f'refused={phone.refusals} | ' if refused else ''}"
           f"other tags lost={other_lost} | missing tags={missing} | wrong color={wrong_color} | "
           f"created={len(phone.created)} | searches={len(phone.queries)}× | dangerous={phone.bad} | "
           f"taps={phone.taps} | events={phone.events[:5]} | {time.time() - t0:.0f}s" +
@@ -844,6 +877,11 @@ SCENARIOS = {
                              template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
                                        {"k": "space"}, {"k": "lvl"}]),
     "settings_changed": dict(big=1, rerun="config"),
+    # the game refuses one name ("inappropriate text"): CANCEL, no second try, and the next run doesn't try it again;
+    # Enter only hides the keyboard and OK saves the name, like in the game
+    "name_refused": dict(rerun=True, steps=["rename"], ok_needed=True, refuse_first=True,
+                         template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
+                                   {"k": "space"}, {"k": "lvl"}]),
     "mixed_tags": dict(big=1, mixed=True, steps=["pvp"]),
     # two Kyogre with the same CP that the search shows in reverse order; each name must go to the right one
     "twins_same_cp": dict(big=1, twins_rev=True, steps=["iv", "rename"],

@@ -83,6 +83,9 @@ L = {
     "confirm": ["CREATE", "SAVE", "ADD", "OK", "DONE", "HOTOVO", "ULOŽIT", "VYTVOŘIT", "PŘIDAT"],
     # the Enter key on the iPhone keyboard (depends on the language and the field)
     "return_keys": ["search", "done", "go", "return", "enter", "hledat", "hotovo", "přejít", "zadat"],
+    # the renaming dialog: its title, the button that closes it without saving, and the game refusing a name
+    # ("This name contains inappropriate text.")
+    "set_nickname": "Set Nickname", "cancel": "CANCEL", "name_refused": ["inappropriate"],
 }
 # Buttons with this text (in capitals) are never tapped, and neither is anything in their row.
 DANGER_RE = re.compile(r"^(TRANSFER|YES|CONFIRM|TRADE|BUY|PURCHASE|RELEASE)\b")
@@ -102,6 +105,7 @@ P_SEARCH_BACK = (0.105, 0.178) # the "<" arrow next to an active search (cancels
 P_SEARCH_CLEAR = (0.915, 0.176)
 P_BOX_TAB = (0.50, 0.085)      # the POKÉMON tab at the top of the storage
 P_NEUTRAL = (0.50, 0.30)       # tapping anywhere advances / closes the appraisal
+P_NICK_CANCEL = (0.50, 0.61)   # CANCEL in the Set Nickname dialog (when OCR misreads it)
 MENU_ICON_DY = 0.06            # the POKÉMON icon in the menu is BELOW its label
 
 # Storage grid: a cell is anchored on its "CP1234" text; the sprite is below it and the name lower still.

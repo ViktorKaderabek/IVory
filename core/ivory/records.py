@@ -157,3 +157,12 @@ class Memory:
     def set_renamed(self, cp, name):
         self.data.setdefault("renamed", {})[f"{cp}|{alnum(name)}"] = time.time()
         self.save()
+
+    def refused_name(self, name):
+        """Did the game refuse this nickname before ("inappropriate text")? Its filter judges the text, so
+        it would refuse it again."""
+        return alnum(name) in self.data.setdefault("refused", {})
+
+    def set_refused_name(self, name):
+        self.data.setdefault("refused", {})[alnum(name)] = time.time()
+        self.save()

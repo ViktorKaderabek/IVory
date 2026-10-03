@@ -6,8 +6,8 @@ import cv2
 from . import config as cfg
 from .errors import StepError
 from .output import T
-from .vision import alnum, crop_norm
-from .screens import bar_labels, classify, detail_cp, detail_name, detail_types, dialog_text
+from .vision import alnum, crop_norm, find_text
+from .screens import bar_labels, classify, detail_cp, detail_name, detail_types, dialog_text, nickname_dialog
 from .bars import read_bars
 from .device import SAVER
 
@@ -132,6 +132,16 @@ def appraise(bot, fr, cp):
         except StepError:
             pass
     return iv, bot.settle(bot.frame())
+
+
+def cancel_nickname(bot, fr):
+    """Closes the Set Nickname dialog with CANCEL – the Pokémon keeps its name. Never with a tap at the
+    bottom: with the keyboard open it would type into the name, and the game could then save that."""
+    c = find_text(fr.texts, [cfg.L["cancel"]], exact=True, region=(0.1, 0.45, 0.9, 0.75))
+    p = (c["cx"], c["cy"]) if c else cfg.P_NICK_CANCEL
+    _, fr = bot.act(p, T("zrušit přejmenování (CANCEL)", "cancel renaming (CANCEL)"),
+                    lambda f: not nickname_dialog(f.texts), timeout=2.5, fr=fr)
+    return fr
 
 
 def close_detail(bot, fr=None):

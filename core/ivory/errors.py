@@ -30,6 +30,11 @@ class NotOnScreen(StepError):
     by scrolling, or it is past the end of the list); it is skipped without going back to the start."""
 
 
+class NameRefused(StepError):
+    """The game refused the new nickname ("This name contains inappropriate text"); the dialog was closed
+    with CANCEL, the Pokémon keeps its name and is skipped (the same name would be refused again)."""
+
+
 class NoNavigation(StepError):
     """The appraisal can't move on to the next Pokémon; fast mode won't work, so the slow mode is used."""
 
