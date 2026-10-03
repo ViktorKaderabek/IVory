@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>PoGo Inventory Manager</string>
+	<string>IVory</string>
 	<key>CFBundleDisplayName</key>
-	<string>PoGo Inventory Manager</string>
+	<string>IVory</string>
 	<key>CFBundleExecutable</key>
 	<string>PoGoInventoryManager</string>
 	<key>CFBundleIdentifier</key>

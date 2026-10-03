@@ -1,5 +1,6 @@
-# sestavená aplikace a mezivýsledky Swiftu
+# sestavená aplikace, přibalené nástroje (scripts/build_runtime.sh) a mezivýsledky Swiftu
 dist/
+build/
 app/.build/
 .swiftpm/
 
@@ -19,3 +20,4 @@ calibration.json
 *.jpg
 *.png
 !app/*.png
+!docs/*.png
