@@ -189,6 +189,10 @@ struct LanguageUpdateCard: View {
                 .padding(.leading, 36)
             }
             .padding(12)
+
+            Rectangle().fill(Theme.border).frame(height: 1)
+
+            ResultsSection()
         }
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))

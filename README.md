@@ -232,7 +232,7 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 - **IV tags**: thresholds in percent, name and color of every tag (click the dot to pick a color).
 - **PvP tags**: per league: on/off, rank limit and tag color.
 - **Renaming**: IV range (dual slider), name template (editor with pieces and preview), overwrite custom nicknames, skip `Removable`, only Pokémon with a given tag.
-- **Language and updates** (the card on top): Čeština / English, the installed version, **Check now** and **Check automatically**.
+- **Language and updates** (the card on top): Čeština / English, the installed version, **Check now** and **Check automatically**, and how much space the run results in `~/Desktop/pogo_runs` take, with **Delete** (the bot's memory stays).
 - **iPhone** (device, Apple Team ID) and **Advanced**.
 - **About**: version, license, the risk notice, when you confirmed it and **Revoke consent** (the notice shows up again on the next start).
 
@@ -377,7 +377,7 @@ Drag IVory from Applications to the Trash, then remove what it installed:
 rm -rf ~/.pogo ~/.appium
 ```
 
-Results of your runs stay in `~/Desktop/pogo_runs` until you delete them.
+Results of your runs stay in `~/Desktop/pogo_runs` until you delete them (**Settings → Run results → Delete** does it before you uninstall).
 If you already used Appium before IVory, keep `~/.appium`.
 
 ## License
