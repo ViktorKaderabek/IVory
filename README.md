@@ -14,6 +14,7 @@
   <img alt="SwiftUI" src="https://img.shields.io/badge/SwiftUI-app-F05138?logo=swift&logoColor=white">
   <img alt="Python 3" src="https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white">
   <img alt="Appium XCUITest" src="https://img.shields.io/badge/Appium-XCUITest-662D91?logo=appium&logoColor=white">
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/github/license/ViktorKaderabek/IVory?color=2f8f5b"></a>
 </p>
 
 <p align="center">
@@ -327,6 +328,13 @@ rm -rf ~/.pogo ~/.appium
 
 Results of your runs stay in `~/Desktop/pogo_runs` until you delete them.
 If you already used Appium before IVory, keep `~/.appium`.
+
+## License
+
+IVory is open source under the [MIT License](LICENSE). You can use, change and share it, also commercially,
+as long as you keep the copyright notice. © 2026 Viktor Kadeřábek.
+
+Contributions are welcome. By opening a pull request you agree that your contribution is released under the same license.
 
 ## Disclaimer
 
