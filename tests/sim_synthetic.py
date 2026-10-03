@@ -824,12 +824,22 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
             if m["name"] != want:
                 bad_name.append((i, m["sp"], m["iv"], m["name"], want))
     other_lost = [i for i, m in enumerate(mons) if (init[i] - ivnames - lgnames - {S.TAG_NAME}) - m["tags"]]
+    # a picture for the app for every Pokémon in the memory, and none for others (the saving runs in the background)
+    want_cards = {S.card_key(it["cp"], it["iv"]) for it in S.Memory(S.MEMORY_FILE).box_items() if it.get("cp")}
+    cdir, cards = S.cards_dir(S.MEMORY_FILE), set()
+    for _ in range(40):
+        cards = {f[:-4] for f in os.listdir(cdir) if f.endswith(".jpg") and not f.endswith(("_icon.jpg", ".tmp.jpg"))} \
+            if cdir.exists() else set()
+        if cards == want_cards:
+            break
+        time.sleep(0.1)
+    bad_cards = sorted(cards ^ want_cards)
     wanted = ([S.TAG_NAME] if "duplicates" in st_used else []) + \
         ([n for _, n in S.IV_TAGS] if "iv" in st_used else []) + (sorted(lgnames) if "pvp" in st_used else [])
     missing = [n for n in wanted if n not in phone.tags]
     wrong_color = [(n, c, S.tag_color(n)) for n, c in phone.created if c != S.tag_color(n)]
     ok = not err and not bad_rem and not bad_iv and not other_lost and not missing and not wrong_color \
-        and not bad_pvp and not bad_name and not phone.bad \
+        and not bad_pvp and not bad_name and not phone.bad and not bad_cards \
         and ("duplicates" not in st_used or phone.queries) and all(query_ok(q) for q in phone.queries) \
         and (not variant.get("ghost") or ghost) and not phone.done_stuck \
         and (not rerun or (second is not None and second[1] <= 3)) \
@@ -838,6 +848,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     print(f"{'OK ' if ok else 'FAIL'} {name:28s} error={err} | Removable wrong={bad_rem} | IV wrong={bad_iv} | "
           f"PvP wrong={bad_pvp} | names wrong={bad_name} | renamed={phone.renamed} | "
           f"{f'refused={phone.refusals} | ' if refused else ''}"
+          f"cards={len(cards)}{f' wrong={bad_cards[:4]}' if bad_cards else ''} | "
           f"other tags lost={other_lost} | missing tags={missing} | wrong color={wrong_color} | "
           f"created={len(phone.created)} | searches={len(phone.queries)}× | dangerous={phone.bad} | "
           f"taps={phone.taps} | events={phone.events[:5]} | {time.time() - t0:.0f}s" +

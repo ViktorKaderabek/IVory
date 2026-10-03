@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// The run folders in ~/Desktop/pogo_runs (log, screenshots of problems, IV crops): how much space they take,
-/// and deleting them. The bot's memory (~/.pogo) is not touched.
+/// and deleting them. Nothing in ~/.pogo is touched: the bot's memory, the Pokémon photos (cards) and the run
+/// history (runs.json) stay.
 enum RunResults {
     static let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/pogo_runs")
 
@@ -31,6 +32,7 @@ enum RunResults {
 
     /// Deletes every run folder; returns the bytes freed (a folder that can't be deleted isn't counted).
     static func deleteAll() -> Int64 {
+        _ = RunHistory.merge(InventoryStats.loadRuns(root))     // the history keeps the runs about to be deleted
         var freed: Int64 = 0
         for dir in folders() {
             let bytes = size(of: dir)
@@ -84,10 +86,10 @@ struct ResultsSection: View {
             Button(tr("Smazat", "Delete"), role: .destructive) { Task { await deleteAll() } }
             Button(tr("Zrušit", "Cancel"), role: .cancel) {}
         } message: {
-            Text(tr("Uvolní se \(RunResults.text(bytes)) (\(runsText): logy a screenshoty). Zmizí i historie běhů "
-                    + "ve Statistikách. Změřená IV a tagy, které si bot pamatuje, zůstanou. Vrátit to nejde.",
-                    "This frees \(RunResults.text(bytes)) (\(runsText): logs and screenshots). The run history in "
-                    + "Stats goes too. The IVs and tags the bot remembers stay. This can't be undone."))
+            Text(tr("Uvolní se \(RunResults.text(bytes)) (\(runsText): logy, screenshoty a výřezy IV). Fotky Pokémonů, "
+                    + "historie běhů ve Statistikách a změřená IV a tagy, které si bot pamatuje, zůstanou. Vrátit to nejde.",
+                    "This frees \(RunResults.text(bytes)) (\(runsText): logs, screenshots and IV crops). The Pokémon photos, "
+                    + "the run history in Stats and the IVs and tags the bot remembers stay. This can't be undone."))
         }
     }
 
@@ -114,6 +116,6 @@ struct ResultsSection: View {
         freed = n
         deleting = false
         await rescan()
-        StatsStore.shared.refresh(removeTag: store.config.removeTag)    // the run history is gone
+        StatsStore.shared.refresh(removeTag: store.config.removeTag)    // the IV crops are gone
     }
 }

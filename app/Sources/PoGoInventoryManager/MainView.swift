@@ -40,18 +40,12 @@ struct MainView: View {
             ZStack(alignment: .top) {
                 pageView(.overview) { MainColumn(fresh: $fresh) }
                 if statsBuilt {
-                    pageView(.stats) {
-                        StatsView {
-                            showPage(.overview)
-                            guard !runner.isRunning else { return }
-                            store.save()
-                            runner.start(steps: store.config.steps, fresh: false)
-                        }
-                    }
+                    pageView(.stats) { StatsView(startRun: startFromStats) }
                 }
             }
             .frame(width: frozenMainWidth)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay { StatsSheetHost(active: page == .stats, startRun: startFromStats) }   // over the page, not scrolled with it
             .padding(.trailing, frozenMainWidth == nil && settingsOpen ? settingsWidth : 0)
 
             settingsPanel
@@ -99,6 +93,15 @@ struct MainView: View {
             setSettings((note.object as? Bool) ?? false)
         }
         #endif
+    }
+
+    /// From the Stats screen (empty state, coverage window): back to the overview and start a run with the steps
+    /// selected there.
+    private func startFromStats() {
+        showPage(.overview)
+        guard !runner.isRunning else { return }
+        store.save()
+        runner.start(steps: store.config.steps, fresh: false)
     }
 
     #if DEBUG
@@ -461,7 +464,7 @@ struct HeaderButtonStyle: ButtonStyle {
                 .foregroundStyle(active ? Theme.accentInk : Theme.text)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(active ? Theme.tint : (hovering ? Theme.raise : .clear),
+                .background(active ? Theme.tint : (hovering ? Theme.chromeHover : .clear),
                             in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .opacity(configuration.isPressed ? 0.75 : 1)
                 .contentShape(Rectangle())

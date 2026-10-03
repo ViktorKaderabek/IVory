@@ -12,6 +12,8 @@ enum Theme {
     static let chrome = Color.adaptive(dark: .oklch(0.19, 0.027, 278), light: .oklch(0.928, 0.009, 280))
     static let surface = Color.adaptive(dark: .oklch(0.205, 0.028, 278), light: .oklch(0.975, 0.006, 280))
     static let raise = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.93, 0.009, 280))
+    /// Hover on `chrome` (the toolbar): in light mode `raise` is the same color as `chrome`, so it didn't show there.
+    static let chromeHover = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.885, 0.011, 280))
     static let input = Color.adaptive(dark: .oklch(0.183, 0.027, 278), light: .oklch(0.96, 0.02, 290))
     static let text = Color.adaptive(dark: .oklch(0.96, 0.008, 280), light: .oklch(0.16, 0.025, 278))
     static let muted = Color.adaptive(dark: .oklch(0.60, 0.02, 280), light: .oklch(0.38, 0.024, 280))

@@ -1,4 +1,5 @@
 """The Pokémon detail screen: opening it and measuring IVs in the appraisal."""
+import os
 import time
 
 import cv2
@@ -10,6 +11,7 @@ from .vision import alnum, crop_norm, find_text
 from .screens import bar_labels, classify, detail_cp, detail_name, detail_types, dialog_text, nickname_dialog
 from .bars import read_bars
 from .device import SAVER
+from .records import card_key, cards_dir
 
 
 def check_detail(bot, fr, cell):
@@ -45,6 +47,37 @@ def save_bars(bot, fr, labels, bars, vals, cp):
     crop = crop_norm(dbg, 0.0, y0, 0.6, y1)
     path = bot.dir / "iv" / f"CP{cp}_{'-'.join(map(str, vals))}.jpg"
     SAVER.submit(cv2.imwrite, str(path), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
+
+
+CARD_W = 540      # width of the whole screen with the appraisal; the small square of the Pokémon is ICON_W
+ICON_W = 256
+
+
+def save_card(fr, rec):
+    """For the Stats screen in the app: the whole screen with the Pokémon and its appraisal (the frame the IVs
+    were read from, so it costs no extra time), and a square of the Pokémon itself for the lists.
+    In ~/.pogo/cards; the memory deletes them once the Pokémon leaves it (Memory.prune_cards)."""
+    if fr is None or not rec.get("iv") or not rec.get("cp"):
+        return
+    img = fr.img
+    h, w = img.shape[:2]
+    icon = crop_norm(img, 0.22, 0.09, 0.78, 0.09 + 0.56 * w / h)
+    base = cards_dir() / card_key(rec["cp"], rec["iv"])
+
+    def write(pic, width, path):
+        pic = cv2.resize(pic, (width, round(width * pic.shape[0] / pic.shape[1])), interpolation=cv2.INTER_AREA)
+        tmp = path.with_name(path.stem + ".tmp.jpg")       # the app may be reading the folder right now
+        if cv2.imwrite(str(tmp), cv2.cvtColor(pic, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 75]):
+            os.replace(tmp, path)
+
+    def work():
+        try:
+            base.parent.mkdir(parents=True, exist_ok=True)
+            write(img, CARD_W, base.with_name(base.name + ".jpg"))
+            write(icon, ICON_W, base.with_name(base.name + "_icon.jpg"))
+        except Exception:
+            pass                                           # a picture isn't worth stopping the run for
+    SAVER.submit(work)
 
 
 def read_appraisal(bot, cp, prev=None, quick=None):

@@ -14,7 +14,7 @@ from .screens import (
     bar_labels, box_count, classify, detail_candy, detail_cp, detail_hp, detail_name, detail_types, HP_RE)
 from .bars import read_bars
 from .navigation import read_grid, reopen_box, scroll_next
-from .detail import close_detail, open_detail, open_detail_menu, read_appraisal
+from .detail import close_detail, open_detail, open_detail_menu, read_appraisal, save_card
 from .tags import detail_chips, detail_tags
 
 
@@ -459,6 +459,8 @@ def scan_details(bot, st, upto=None):
                 emit("scan", what="iv", n=min(n, expected), total=expected, cp=rec["cp"], name=rec["name"],
                      iv=list(rec["iv"]) if rec["iv"] else None)
                 step(T("Čtu IV: ", "Reading IV: ") + f"{min(n, expected)}/{expected}")
+            if iv:
+                save_card(here, rec)               # a picture for the Stats screen in the app
             nxt = next((k for k in unread(st, total) if k > last), None)
             if not go_on or nxt is None or nxt - last > 12:
                 break                          # done, or the next unread one is far away – it gets opened again

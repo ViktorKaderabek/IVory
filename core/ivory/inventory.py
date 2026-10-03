@@ -11,7 +11,7 @@ from .output import emit, log, pokemon_count, step, T
 from .vision import alnum
 from .grid import names_ok
 from .navigation import read_grid, scroll_next
-from .detail import appraise, close_detail, open_detail
+from .detail import appraise, close_detail, open_detail, save_card
 from .scan import (
     count_tags, drop_phantoms, grid_scan, match_view, open_cell, read_here, require_top, same_cell,
     scan_details, unread)
@@ -36,6 +36,8 @@ def scan_details_slow(bot, st):
         rec["iv"] = tuple(iv) if iv else None
         rec["t"] = time.time()
         st.recs[i] = rec
+        if iv:
+            save_card(bot.bars_frame, rec)
         bot.progress += 1
         ivs = "/".join(map(str, iv)) if iv else "?"
         log(f"   {i + 1}/{total} CP{rec['cp']} {rec['name']}: IV {ivs}")
@@ -192,6 +194,8 @@ def read_missing(bot, st, todo):
                 rec["cp"] = st.seq[k]["cp"]
             rec["t"] = time.time()
             st.recs[k] = rec
+            if iv:
+                save_card(bot.bars_frame, rec)
             bot.progress += 1
             ivs = "/".join(map(str, iv)) if iv else "?"
             log(f"   {n}/{total} CP{rec['cp']} {rec['name']}: IV {ivs}" +

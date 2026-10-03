@@ -232,7 +232,7 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 - **IV tags**: thresholds in percent, name and color of every tag (click the dot to pick a color).
 - **PvP tags**: per league: on/off, rank limit and tag color.
 - **Renaming**: IV range (dual slider), name template (editor with pieces and preview), overwrite custom nicknames, skip `Removable`, only Pokémon with a given tag.
-- **Language and updates** (the card on top): Čeština / English, the installed version, **Check now** and **Check automatically**, and how much space the run results in `~/Desktop/pogo_runs` take, with **Delete** (the bot's memory stays).
+- **Language and updates** (the card on top): Čeština / English, the installed version, **Check now** and **Check automatically**, and how much space the run results in `~/Desktop/pogo_runs` take, with **Delete** (the bot's memory, the Pokémon photos and the run history in Stats stay).
 - **iPhone** (device, Apple Team ID) and **Advanced**.
 - **About**: version, license, the risk notice, when you confirmed it and **Revoke consent** (the notice shows up again on the next start).
 
@@ -314,6 +314,8 @@ flowchart LR
 | `~/.pogo/config.json` | settings from the app |
 | `~/.pogo/pamet.json` | measured IVs (kept for a few hours) and which Pokémon already got `Removable`. **Don't delete it** while tagged Pokémon are still in your storage: the bot uses it to avoid selecting them again, because a tap would untick the tag. |
 | `~/.pogo/last_box.json` | the storage from the last measurement (species, IVs, league ranks). The app uses it for the number of Pokémon in the rename range and for the name previews. |
+| `~/.pogo/cards/` | a picture of each Pokémon for the Stats screen: the whole phone screen with its appraisal (`883_14-13-14.jpg`, 540 px wide, about 60 kB, including the speech bubble that says where and when it was caught) and a square of the Pokémon (`…_icon.jpg`). Pictures of Pokémon that leave the memory get deleted. |
+| `~/.pogo/runs.json` | the run history for the Stats screen (start, duration, Pokémon checked, recovered errors). It survives deleting the run results. |
 | `~/.pogo/runtime` | Node.js, Appium and Python downloaded on the first start |
 | `~/.pogo/venv` | Python environment with the bot's libraries |
 | `~/Library/Caches/IVory` | a downloaded update until it's installed |

@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// The Stats screen ("What IVory knows"): Pokédex, IVs and hundos on top, the PvP hall of fame, then smaller cards.
-/// Where a number rests on incomplete data, the card says how many entries it was computed from.
+/// The Stats screen ("What IVory knows"), the "showcase" layout: three big numbers without frames on top
+/// (Pokédex, IVs, hundos), the PvP hall of fame with pictures, the most common and rare species, and the
+/// smaller distributions in one panel at the bottom. Every number, row, bar and picture opens a window with
+/// the Pokémon behind it (StatsSheet.swift).
 struct StatsView: View {
     @EnvironmentObject private var store: ConfigStore
     @ObservedObject private var statsStore = StatsStore.shared
@@ -28,145 +30,112 @@ struct StatsView: View {
     }
 
     private func content(_ s: InventoryStats) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 36) {
             header(s)
-            HStack(spacing: 8) {
-                Image(systemName: "info.circle").font(.system(size: 13)).foregroundStyle(Theme.accentInk)
-                Text(tr("Čísla ukazují kusy, které IVory přečetl při bězích, ne celý inventář ve hře.",
-                        "These numbers cover the Pokémon IVory read during its runs, not your whole storage."))
+            WeightedRow(weights: [1, 1, 1], spacing: 16, minColumn: 230) {
+                DexColumn(s: s)
+                IVColumn(s: s)
+                HundoColumn(s: s)
             }
-            .font(.system(size: 13))
-            .foregroundStyle(Theme.muted)
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.raise, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            WeightedRow(weights: [1.35, 1, 0.8]) {
-                DexCard(s: s)
-                IVCard(s: s, ivTags: store.config.ivTags)
-                HundoCard(s: s)
+            .padding(.horizontal, -20)      // the columns have no frame; their content lines up with the rest
+            .padding(.vertical, -18)
+            HallOfFame(s: s, pvp: store.config.pvp)
+            WeightedRow(weights: [1, 1], spacing: 12, minColumn: 300) {
+                TopSpeciesPanel(s: s)
+                RarePanel(s: s)
             }
-            WeightedRow(weights: [1.6, 1]) {
-                PvPCard(s: s, pvp: store.config.pvp)
-                StrongestCard(s: s)
-            }
-            WeightedRow(weights: [1.5, 1, 1]) {
-                RareCard(s: s)
-                NumberCard(symbol: "arrow.up.forward.circle", title: tr("Ještě vyvinout", "Still to evolve"),
-                           value: s.canEvolve, caption: tr("kusů má další evoluci", "Pokémon have a further evolution"))
-                NumberCard(symbol: "square.on.square", title: tr("Duplicity", "Duplicates"), value: s.duplicateSpecies,
-                           caption: tr("druhů má víc kusů", "species have more than one"),
-                           footnote: s.removable > 0 ? (tr("\(s.removable) s tagem \(store.config.removeTag)",
-                                                           "\(s.removable) tagged \(store.config.removeTag)"),
-                                                        store.config.removeTagColor.swatch) : nil)
-            }
-            WeightedRow(weights: [1, 1, 1]) {
-                TypesCard(s: s)
-                TopSpeciesCard(s: s)
-                LevelsCard(s: s)
-            }
-            WeightedRow(weights: [1.2, 1]) {
-                TagsCard(tags: Array(s.tags.prefix(4)), color: tagColor)
-                RunsCard(runs: s.runs)
-            }
+            DistributionPanel(s: s, config: store.config)
         }
     }
 
     private func header(_ s: InventoryStats) -> some View {
-        HStack(alignment: .bottom, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .bottom, spacing: 24) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(tr("Co IVory zná", "What IVory knows"))
-                    .font(.system(size: 26, weight: .medium)).tracking(-0.5)
-                Text(subtitle(s)).font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    .font(.system(size: 28, weight: .medium)).tracking(-0.56)
+                CoverageLine(s: s)
             }
             Spacer(minLength: 12)
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(trCount(s.total, cs: "kus s IV", "kusy s IV", "kusů s IV", en: "Pokémon with IV", "Pokémon with IV"))
-                        .font(.system(size: 13, weight: .semibold))
-                    Text(tr("druh a úroveň u \(s.withSpecies) (\(percentText(share(s.withSpecies, s.total))))",
-                            "species and level for \(s.withSpecies) (\(percentText(share(s.withSpecies, s.total))))"))
-                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
-                }
-                .monospacedDigit()
-                Meter(fraction: Double(s.withSpecies) / Double(max(1, s.total)), height: 6).frame(width: 72)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border))
+            if !s.runs.isEmpty { RunDots(runs: s.runs).frame(width: 300) }
         }
     }
-
-    private func subtitle(_ s: InventoryStats) -> String {
-        var parts = [trCount(s.runs.count, cs: "běhu", "běhů", "běhů", en: "run", "runs")]
-        parts[0] = tr("Z \(parts[0])", "From \(parts[0])")
-        if let last = s.runs.last { parts.append(tr("naposledy ", "last ") + RunsCard.when(last.date)) }
-        parts.append(tr("počítá se jen na tvém Macu", "computed only on your Mac"))
-        return parts.joined(separator: " · ")
-    }
-
-    private func tagColor(_ name: String) -> TagColor {
-        let c = store.config
-        if name == c.removeTag { return c.removeTagColor }
-        if let t = c.ivTags.first(where: { $0.name == name }) { return t.color }
-        if let l = c.pvp.all.first(where: { $0.league.name == name }) { return l.league.color }
-        return .gray
-    }
 }
 
-private func share(_ part: Int, _ whole: Int) -> Int {
-    whole > 0 ? Int((Double(part) / Double(whole) * 100).rounded()) : 0
+/// The noun after a number: Czech has three forms (1, 2–4, the rest), English two.
+private func noun(_ n: Int, _ one: String, _ few: String, _ many: String, en enOne: String, _ enMany: String) -> String {
+    if L10n.lang == .en { return n == 1 ? enOne : enMany }
+    return n == 1 ? one : (2...4).contains(n) ? few : many
 }
 
-// MARK: - Cards
+@MainActor private func open(_ sheet: StatsSheet, select: Int? = nil) {
+    StatsSheetModel.shared.open(sheet, select: select)
+}
 
-/// Stat card: icon, title, a small note on the right (how many entries it covers), content below.
-private struct StatCard<Content: View>: View {
-    let symbol: String
-    let title: String
-    var note: String? = nil
-    var symbolColor: Color = Theme.accentInk
-    var spacing: CGFloat = 12
-    var background: AnyShapeStyle = AnyShapeStyle(Theme.surface)
-    var stroke: Color = Theme.border
-    @ViewBuilder var content: Content
+// MARK: - Building blocks
+
+/// A row that opens its own window: highlighted on hover.
+private struct RowButton<Label: View>: View {
+    var hover: Color = Theme.raise
+    var horizontal: CGFloat = 6
+    var vertical: CGFloat = 3
+    var radius: CGFloat = 6
+    let action: () -> Void
+    @ViewBuilder var label: Label
+    @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: spacing) {
-            HStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(symbolColor)
-                Text(title).font(.system(size: 14, weight: .semibold))
-                if let note {
-                    Spacer(minLength: 6)
-                    Text(note).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
-                }
-            }
-            content
+        Button(action: action) {
+            label
+                .padding(.horizontal, horizontal).padding(.vertical, vertical)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(hovering ? hover : .clear, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+                .contentShape(Rectangle())
         }
-        .padding(EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(stroke))
+        .buttonStyle(.plain)
+        .padding(.horizontal, -horizontal)
+        .onHover { hovering = $0 }
     }
 }
 
-/// A big number with a caption next to it.
-private struct BigNumber: View {
-    let value: String
-    var caption: String? = nil
-    var size: CGFloat = 44
+/// A link in the accent color, underlined on hover.
+private struct TextLink: View {
+    let text: String
+    var arrow = false
+    let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(value)
-                .font(.system(size: size, weight: .semibold))
-                .tracking(-size * 0.04)
-                .monospacedDigit()
-            if let caption {
-                Text(caption).font(.system(size: 15)).foregroundStyle(Theme.muted).monospacedDigit()
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(text).underline(hovering)
+                if arrow { Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold)) }
             }
+            .foregroundStyle(Theme.accentInk)
+            .contentShape(Rectangle())
         }
-        .lineLimit(1)   // no minimumScaleFactor: shrinking the font is measured repeatedly and is expensive
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// "12 more ▾" / "Hide ▴" under a list that doesn't show everything at first.
+private struct MoreButton: View {
+    let open: Bool
+    let more: String
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { action() }
+        } label: {
+            HStack(spacing: 5) {
+                Text(open ? tr("Skrýt", "Hide") : more)
+                Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold))
+            }
+            .font(.system(size: 12, weight: .semibold))
+        }
+        .buttonStyle(GhostButtonStyle(height: 24))
+        .padding(.leading, -10)
     }
 }
 
@@ -176,418 +145,761 @@ private struct Meter: View {
     var height: CGFloat = 10
     var color: Color = Theme.accent
     var glow = false
+    var radius: CGFloat? = nil
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Theme.track)
-                RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+                RoundedRectangle(cornerRadius: radius ?? height / 2, style: .continuous).fill(Theme.track)
+                RoundedRectangle(cornerRadius: radius ?? height / 2, style: .continuous)
                     .fill(color)
-                    .frame(width: max(fraction > 0 ? height : 0, geo.size.width * min(1, max(0, fraction))))
-                    .shadow(color: glow ? color.opacity(0.7) : .clear, radius: 5)
+                    .frame(width: max(fraction > 0 ? min(height, 4) : 0, geo.size.width * min(1, max(0, fraction))))
+                    .shadow(color: glow ? color.opacity(0.9) : .clear, radius: 5)
             }
         }
         .frame(height: height)
     }
 }
 
-/// Chart row: label · bar · number.
-private struct BarRow: View {
-    let label: String
-    let value: Int
-    let maxValue: Int
-    var color: Color = Theme.accent
-    var labelWidth: CGFloat = 62
-    var height: CGFloat = 10
-    var labelColor: Color = Theme.muted
+/// A dark bubble above a bar, a dot or a picture while the mouse is over it.
+private struct Tip: View {
+    let text: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(label).font(.system(size: 12, weight: labelColor == Theme.muted ? .regular : .medium))
-                .foregroundStyle(labelColor).lineLimit(1).frame(width: labelWidth, alignment: .leading)
-            Meter(fraction: Double(value) / Double(max(1, maxValue)), height: height, color: color)
-            Text("\(value)").font(.system(size: 12, weight: .semibold)).monospacedDigit()
-                .frame(width: 30, alignment: .trailing)
-        }
+        Text(text).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.bg).lineLimit(1)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Theme.text, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .fixedSize()
+            .allowsHitTesting(false)
     }
 }
 
-private struct DexCard: View {
-    let s: InventoryStats
-    private static let regions = ["Kanto", "Johto", "Hoenn", "Sinnoh", "Unova", "Kalos", "Alola", "Galar", "Paldea"]
+/// A panel with a thin border (everything below the three big numbers).
+private struct Panel<Content: View>: View {
+    var padding = EdgeInsets(top: 16, leading: 18, bottom: 16, trailing: 18)
+    @ViewBuilder var content: Content
 
     var body: some View {
-        StatCard(symbol: "books.vertical", title: "Pokédex",
-                 note: tr("z \(s.withSpecies) kusů se známým druhem", "from \(s.withSpecies) with known species")) {
-            BigNumber(value: "\(s.dexOwned)",
-                      caption: tr("z \(s.dexTotal) druhů · \(percentText(share(s.dexOwned, s.dexTotal)))",
-                                  "of \(s.dexTotal) species · \(percentText(share(s.dexOwned, s.dexTotal)))"))
-            Meter(fraction: Double(s.dexOwned) / Double(max(1, s.dexTotal)), height: 6, glow: true)
-            Text(tr("Různé druhy podle regionu, odkud pocházejí", "Different species by home region"))
-                .font(.system(size: 12)).foregroundStyle(Theme.muted)
-            let top = max(1, s.generations.max() ?? 1)
-            Grid(horizontalSpacing: 6, verticalSpacing: 4) {
-                GridRow(alignment: .bottom) {
-                    ForEach(0..<9, id: \.self) { i in
-                        VStack(spacing: 4) {
-                            Text("\(s.generations[i])").font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 2,
-                                                   bottomTrailingRadius: 2, topTrailingRadius: 4, style: .continuous)
-                                .fill(s.generations[i] == top ? Theme.accent : Theme.accent.opacity(0.5))
-                                .frame(height: max(3, 64 * CGFloat(s.generations[i]) / CGFloat(top)))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                GridRow {
-                    ForEach(0..<9, id: \.self) { i in
-                        VStack(spacing: 0) {
-                            Text(Self.regions[i]).font(.system(size: 11, weight: .medium))
-                            Text(tr("\(i + 1). gen", "Gen \(i + 1)")).font(.system(size: 10)).foregroundStyle(Theme.muted)
-                        }
-                        .lineLimit(1).minimumScaleFactor(0.75)
-                    }
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom)
-        }
+        VStack(alignment: .leading, spacing: 6) { content }
+            .padding(padding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
     }
 }
 
-private struct IVCard: View {
-    let s: InventoryStats
-    let ivTags: [IVTag]
-
-    var body: some View {
-        StatCard(symbol: "chart.bar.xaxis", title: tr("Rozložení IV", "IV spread"),
-                 note: trCount(s.total, cs: "kus", "kusy", "kusů", en: "Pokémon", "Pokémon")) {
-            BigNumber(value: percentText(s.ivAverage), caption: tr("průměr", "average"))
-            let top = max(1, s.ivBins.map(\.count).max() ?? 1)
-            VStack(spacing: 7) {
-                ForEach(s.ivBins, id: \.lower) { bin in
-                    BarRow(label: label(bin.lower), value: bin.count, maxValue: top, color: color(bin.lower), height: 12)
-                }
-            }
-            Spacer(minLength: 0)
-            Text(tr("Vychýlené nahoru: slabé kusy se průběžně mažou.", "Skewed high: weak Pokémon keep getting deleted."))
-                .font(.system(size: 12)).foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func label(_ lower: Int) -> String {
-        switch lower {
-        case 90: return pctRange(90, 100)
-        case 0: return tr("pod 70 %", "under 70%")
-        default: return pctRange(lower, lower + 9)
-        }
-    }
-
-    /// Color of the IV tag that the bin's lower bound falls into (the same colors as in the game).
-    private func color(_ lower: Int) -> Color {
-        let tag = ivTags.filter { !$0.name.isEmpty }.sorted { $0.min > $1.min }.first { $0.min <= max(lower, 1) }
-        return (tag?.color ?? .gray).swatch
-    }
-}
-
-private struct HundoCard: View {
-    let s: InventoryStats
-    private let gold = Color.oklch(0.8, 0.15, 85)
-
-    var body: some View {
-        StatCard(symbol: "crown.fill", title: "Hundo", symbolColor: gold, spacing: 10,
-                 background: AnyShapeStyle(LinearGradient(colors: [gold.opacity(0.2), Theme.surface],
-                                                          startPoint: .topLeading, endPoint: UnitPoint(x: 0.6, y: 0.7))),
-                 stroke: gold.opacity(0.45)) {
-            BigNumber(value: "\(s.hundos.count)", caption: tr("kusů 15/15/15", "at 15/15/15"))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                ForEach(Array(s.hundos.enumerated()), id: \.offset) { _, name in
-                    VStack(spacing: 2) {
-                        ForEach(0..<3, id: \.self) { _ in Capsule().fill(gold).frame(height: 3) }
-                    }
-                    .padding(.horizontal, 5).padding(.vertical, 6)
-                    .background(Theme.raise, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .help(name)
-                }
-            }
-            Spacer(minLength: 0)
-            Rectangle().fill(Theme.border).frame(height: 1)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(s.nearPerfect)").font(.system(size: 18, weight: .semibold)).monospacedDigit()
-                Text(tr("kusů s 98 % a víc", "at 98% or more")).font(.system(size: 13)).foregroundStyle(Theme.muted)
-            }
-        }
-    }
-}
-
-private struct PvPCard: View {
-    let s: InventoryStats
-    let pvp: PvPConfig
-
-    var body: some View {
-        StatCard(symbol: "trophy", title: tr("Síň slávy PvP", "PvP hall of fame"),
-                 note: tr("z \(s.ranked) kusů s pořadím", "from \(s.ranked) ranked")) {
-            Text(tr("kusy s pořadím 1", "rank 1 Pokémon")).font(.system(size: 13)).foregroundStyle(Theme.muted)
-                .padding(.top, -8)
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(s.leagues) { league in leagueBox(league) }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-        }
-    }
-
-    private func leagueBox(_ league: InventoryStats.League) -> some View {
-        let setting = pvp.all.first { $0.key == league.key }?.league
-        let cap = ["great": tr("1 500 CP", "1,500 CP"), "ultra": tr("2 500 CP", "2,500 CP"), "master": tr("bez limitu", "no cap")][league.key] ?? ""
-        let title = ["great": "Great", "ultra": "Ultra", "master": "Master"][league.key] ?? league.key
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Circle().fill((setting?.color ?? .gray).swatch).frame(width: 10, height: 10)
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Spacer(minLength: 4)
-                Text(cap).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
-            }
-            if league.top.isEmpty {
-                Text(tr("Zatím žádný kus s pořadím 1", "No rank 1 Pokémon yet"))
-                    .font(.system(size: 13)).foregroundStyle(Theme.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            ForEach(league.top.prefix(4), id: \.self) { name in
-                HStack(spacing: 8) {
-                    Text("#1").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.accentInk)
-                        .padding(.horizontal, 6).frame(height: 20)
-                        .background(Theme.tint, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    Text(name).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                }
-            }
-            if league.top.count > 4 {
-                Text(tr("a ještě \(league.top.count - 4)", "and \(league.top.count - 4) more"))
-                    .font(.system(size: 12)).foregroundStyle(Theme.muted)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Theme.raise, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
-
-private struct StrongestCard: View {
-    let s: InventoryStats
-
-    var body: some View {
-        StatCard(symbol: "bolt", title: tr("Nejsilnější", "Strongest")) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(tr("Nejvyšší CP teď", "Highest CP now")).font(.system(size: 13)).foregroundStyle(Theme.muted)
-                Spacer()
-                Text(s.topCP.formatted(.number.locale(L10n.locale)))
-                    .font(.system(size: 22, weight: .semibold)).monospacedDigit()
-            }
-            Rectangle().fill(Theme.border).frame(height: 1)
-            Text(tr("Teoretické maximum na úrovni 50", "Theoretical maximum at level 50"))
-                .font(.system(size: 12)).foregroundStyle(Theme.muted)
-            ForEach(s.maxCP) { item in
-                VStack(spacing: 4) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(item.name).font(.system(size: 14, weight: .medium))
-                        Spacer()
-                        Text(item.count.formatted(.number.locale(L10n.locale)))
-                            .font(.system(size: 14, weight: .semibold)).monospacedDigit()
-                    }
-                    Meter(fraction: Double(item.count) / 5000, height: 6)
-                }
-            }
-            if s.maxCP.isEmpty {
-                Text(tr("Ukáže se po běhu s PvP tagy.", "Shows up after a run with PvP tags."))
-                    .font(.system(size: 13)).foregroundStyle(Theme.muted)
-            }
-        }
-    }
-}
-
-private struct RareCard: View {
-    let s: InventoryStats
-
-    var body: some View {
-        StatCard(symbol: "sparkles", title: tr("Vzácné", "Rare"),
-                 note: tr("hlavně ze starších běhů", "mostly from older runs"), spacing: 10) {
-            HStack(spacing: 8) {
-                badge("star.fill", s.legendary, tr("legendy", "legendary"), Theme.yellow, Theme.yellowTint)
-                badge("globe.americas.fill", s.ultraBeast, "ultra beasts", Theme.blue, Theme.blueTint)
-                badge("sparkle", s.mythical, tr("mýtičtí", "mythical"), Theme.pink, Theme.pinkTint)
-            }
-            .frame(maxHeight: .infinity)
-        }
-    }
-
-    private func badge(_ symbol: String, _ n: Int, _ label: String, _ fg: Color, _ bg: Color) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(fg)
-                .frame(width: 30, height: 30).background(bg, in: Circle())
-            Text("\(n)").font(.system(size: 22, weight: .semibold)).monospacedDigit()
-            Text(label).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
-        }
-        .padding(.horizontal, 6).padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.raise, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
-
-private struct NumberCard: View {
-    let symbol: String
+private struct PanelTitle: View {
     let title: String
-    let value: Int
-    let caption: String
-    var footnote: (String, Color)? = nil
+    var sub: String? = nil
 
     var body: some View {
-        StatCard(symbol: symbol, title: title, spacing: 6) {
-            Text("\(value)").font(.system(size: 36, weight: .semibold)).tracking(-1).monospacedDigit()
-            Text(caption).font(.system(size: 13)).foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            if let footnote {
-                Spacer(minLength: 4)
-                HStack(spacing: 6) {
-                    Circle().fill(footnote.1).frame(width: 8, height: 8)
-                    Text(footnote.0).font(.system(size: 12))
-                }
-            }
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title).font(.system(size: 16, weight: .medium))
+            if let sub { Text(sub).font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1) }
         }
+        .padding(.bottom, 6)
     }
 }
 
-private struct TypesCard: View {
+// MARK: - Header
+
+/// "From 423 Pokémon read, the species is known for 278 ⓘ": opens the coverage window.
+private struct CoverageLine: View {
     let s: InventoryStats
+    @State private var hovering = false
 
     var body: some View {
-        StatCard(symbol: "drop", title: tr("Typy", "Types"),
-                 note: trCount(s.typed, cs: "kus", "kusy", "kusů", en: "Pokémon", "Pokémon"), spacing: 10) {
-            let shown = s.types.count > 6 ? Array(s.types.prefix(5)) + [s.types.last!] : s.types
-            let top = max(1, s.types.first?.count ?? 1)
-            ForEach(Array(shown.enumerated()), id: \.element.id) { i, t in
-                if i == 5 && s.types.count > 6 {
-                    Text(tr("… dalších \(s.types.count - 6) typů", "… \(s.types.count - 6) more types"))
-                        .font(.system(size: 11)).foregroundStyle(Theme.muted).padding(.leading, 68)
-                }
-                BarRow(label: t.name.capitalized, value: t.count, maxValue: top, color: PokeType.color(t.name),
-                       labelWidth: 60, labelColor: Theme.text)
+        Button { open(.coverage) } label: {
+            HStack(spacing: 6) {
+                Text(tr("Z \(number(s.total)) přečtených kusů, druh známe u \(number(s.withSpecies))",
+                        "From \(number(s.total)) Pokémon read, the species is known for \(number(s.withSpecies))"))
+                Image(systemName: "info.circle").font(.system(size: 12))
             }
+            .font(.system(size: 13)).monospacedDigit()
+            .foregroundStyle(hovering ? Theme.text : Theme.muted)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(tr("Z čeho čísla jsou", "What the numbers come from"))
     }
 }
 
-private struct TopSpeciesCard: View {
-    let s: InventoryStats
-    private let gold = Color.oklch(0.86, 0.15, 92)
-
-    var body: some View {
-        StatCard(symbol: "list.number", title: tr("Nejčastější druh", "Most common species"), spacing: 6) {
-            ForEach(Array(s.topSpecies.enumerated()), id: \.element.id) { i, sp in
-                HStack(spacing: 10) {
-                    Text("\(i + 1)").font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(i == 0 ? Color.oklch(0.2, 0.01, 270) : Theme.text)
-                        .frame(width: 22, height: 22)
-                        .background(i == 0 ? gold : Theme.raise, in: Circle())
-                    Text(sp.name).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                    Spacer()
-                    Text("\(sp.count)×").font(.system(size: 14, weight: .semibold)).monospacedDigit()
-                }
-                .padding(.vertical, 6)
-            }
-        }
-    }
-}
-
-private struct LevelsCard: View {
-    let s: InventoryStats
-
-    var body: some View {
-        StatCard(symbol: "stairs", title: tr("Úrovně", "Levels"),
-                 note: trCount(s.leveled, cs: "kus", "kusy", "kusů", en: "Pokémon", "Pokémon"), spacing: 10) {
-            let top = max(1, s.levels.map(\.count).max() ?? 1)
-            ForEach(s.levels, id: \.label) { l in
-                BarRow(label: l.label, value: l.count, maxValue: top, labelWidth: 56)
-            }
-        }
-    }
-}
-
-private struct TagsCard: View {
-    let tags: [InventoryStats.Named]
-    let color: (String) -> TagColor
-
-    var body: some View {
-        StatCard(symbol: "tag", title: tr("Tagy ve hře", "Tags in the game"),
-                 note: tr("jeden kus může mít víc tagů", "one Pokémon can have several")) {
-            GeometryReader { geo in
-                let total = CGFloat(max(1, tags.map(\.count).reduce(0, +)))
-                let free = geo.size.width - CGFloat(max(0, tags.count - 1)) * 3
-                HStack(spacing: 3) {
-                    ForEach(tags) { t in
-                        let c = color(t.name)
-                        Text("\(t.count)").font(.system(size: 12, weight: .bold)).monospacedDigit()
-                            .foregroundStyle(c.isLight ? Color.oklch(0.2, 0.01, 270) : Theme.white)
-                            .padding(.horizontal, 8)
-                            .frame(width: free * CGFloat(t.count) / total, height: 26, alignment: .leading)
-                            .background(c.swatch, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                            .help("\(t.name): \(t.count)")
-                    }
-                }
-            }
-            .frame(height: 26)
-            FlowRow(spacing: 6) {
-                ForEach(tags) { t in
-                    HStack(spacing: 6) {
-                        Circle().fill(color(t.name).swatch).frame(width: 9, height: 9)
-                        Text(t.name).font(.system(size: 12))
-                    }
-                    .padding(.trailing, 10)
-                }
-            }
-        }
-    }
-}
-
-struct RunsCard: View {
+/// Run history as a line of dots, the last run bigger; hovering a dot shows that run below, a click lists
+/// the Pokémon it read for the first time.
+private struct RunDots: View {
     let runs: [InventoryStats.Run]
+    @State private var hovered: String?
 
     var body: some View {
-        StatCard(symbol: "clock.arrow.circlepath", title: tr("Historie běhů", "Run history"),
-                 note: trCount(runs.count, cs: "běh", "běhy", "běhů", en: "run", "runs")) {
+        let recent = Array(runs.suffix(30))
+        VStack(alignment: .trailing, spacing: 6) {
             HStack(spacing: 0) {
-                ForEach(Array(runs.suffix(40).enumerated()), id: \.element.id) { i, run in
+                ForEach(recent) { run in
                     let last = run.id == runs.last?.id
+                    let on = hovered == run.id
                     HStack(spacing: 0) {
                         Circle()
-                            .fill(last ? Theme.accent : Theme.accent.opacity(0.45))
-                            .frame(width: last ? 12 : 7, height: last ? 12 : 7)
-                            .shadow(color: last ? Theme.accent.opacity(0.8) : .clear, radius: 5)
-                            .help(Self.describe(run))
-                        if !last { Rectangle().fill(Theme.track).frame(height: 2) }
+                            .fill(last || on ? Theme.accent : Theme.accent.opacity(0.5))
+                            .frame(width: last || on ? 11 : 6, height: last || on ? 11 : 6)
+                            .shadow(color: last || on ? Theme.accent.opacity(0.9) : .clear, radius: 5)
+                            .frame(width: 14, height: 14)
+                            .contentShape(Rectangle())
+                            .onTapGesture { open(.run(run.id)) }
+                            .onHover { hovered = $0 ? run.id : (hovered == run.id ? nil : hovered) }
+                            .padding(.horizontal, -3)
+                        if !last { Rectangle().fill(Theme.track).frame(height: 2).frame(maxWidth: .infinity) }
                     }
-                    .frame(maxWidth: last ? 12 : .infinity)
+                    .frame(maxWidth: last ? 8 : .infinity)
                 }
             }
-            .frame(height: 22)
-            if let last = runs.last {
-                Text(Self.when(last.date).prefix(1).uppercased() + Self.when(last.date).dropFirst())
-                    .font(.system(size: 13, weight: .semibold))
-                + Text("  " + Self.details(last)).font(.system(size: 13)).foregroundColor(Theme.muted)
+            .frame(height: 18)
+            .animation(.easeOut(duration: 0.15), value: hovered)
+            Text(info).font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit().lineLimit(1)
+        }
+    }
+
+    private var info: String {
+        guard let i = runs.firstIndex(where: { $0.id == hovered }) ?? (runs.isEmpty ? nil : runs.count - 1) else { return "" }
+        let run = runs[i]
+        var parts = [i == runs.count - 1 && hovered == nil
+                     ? trCount(runs.count, cs: "běh", "běhy", "běhů", en: "run", "runs") + tr(" · poslední ", " · last ") + RunText.when(run.date)
+                     : tr("Běh \(i + 1) · ", "Run \(i + 1) · ") + RunText.when(run.date)]
+        if let n = run.checked { parts.append(tr("\(number(n)) prošlo", "\(number(n)) checked")) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - The three big numbers
+
+/// One of the three columns on top: no frame, a background only on hover; a click opens its window
+/// (bars, pictures and links inside open their own).
+private struct HeroColumn<Content: View>: View {
+    let symbol: String
+    let title: String
+    var symbolColor: Color = Theme.accentInk
+    var hoverFill: AnyShapeStyle = AnyShapeStyle(Theme.surface)
+    let sheet: StatsSheet
+    @ViewBuilder var content: Content
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(symbolColor)
+                Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.muted).lineLimit(1)
+            }
+            content
+        }
+        .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(hovering ? hoverFill : AnyShapeStyle(Color.clear), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture { open(sheet) }
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// The big number with its caption.
+private struct BigNumber: View {
+    let value: String
+    let caption: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(value).font(.system(size: 68, weight: .medium)).tracking(-3).monospacedDigit()
+            Text(caption).font(.system(size: 16)).foregroundStyle(Theme.muted).monospacedDigit()
+        }
+        .lineLimit(1)   // no minimumScaleFactor: shrinking the font is measured repeatedly and is expensive
+        .padding(.vertical, -7)    // the line height of a 68-point font leaves too much air
+    }
+}
+
+private struct Footnote: View {
+    let text: String
+
+    var body: some View {
+        Text(text).font(.system(size: 13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct DexColumn: View {
+    let s: InventoryStats
+    @State private var hovered: Int?
+
+    var body: some View {
+        HeroColumn(symbol: "books.vertical", title: "Pokédex", sheet: .dex) {
+            BigNumber(value: "\(s.dexOwned)", caption: tr("z \(number(s.dexTotal)) druhů", "of \(number(s.dexTotal)) species"))
+            Meter(fraction: Double(s.dexOwned) / Double(max(1, s.dexTotal)), height: 4, glow: true, radius: 2)
+            let top = max(1, s.generations.max() ?? 1)
+            let best = s.generations.firstIndex(of: top) ?? 0
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(0..<9, id: \.self) { i in
+                    let on = hovered == i
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(on || i == best ? Theme.accent : Theme.accent.opacity(0.5))
+                        .shadow(color: on ? Theme.accent.opacity(0.9) : .clear, radius: 6)
+                        .frame(height: max(3, 52 * CGFloat(s.generations[i]) / CGFloat(top)))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .contentShape(Rectangle())
+                        .overlay(alignment: .top) {
+                            if on {
+                                Tip(text: tr("\(InventoryStats.regions[i]) · \(s.generations[i]) z \(s.generationTotals[i]) druhů",
+                                             "\(InventoryStats.regions[i]) · \(s.generations[i]) of \(s.generationTotals[i]) species"))
+                                    .offset(y: -26)
+                            }
+                        }
+                        .zIndex(on ? 1 : 0)
+                        .onTapGesture { open(.region(i)) }
+                        .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
+                }
+            }
+            .frame(height: 52)
+            .animation(.easeOut(duration: 0.15), value: hovered)
+            .zIndex(1)
+            Spacer(minLength: 0)
+            Footnote(text: footnote(best: best))
+        }
+    }
+
+    private func footnote(best: Int) -> String {
+        var parts = [tr("Nejvíc z \(InventoryStats.regions[best])", "Most from \(InventoryStats.regions[best])")]
+        if s.newSpecies > 0 {
+            let today = s.runs.last.map { Calendar.current.isDateInToday($0.date) } ?? false
+            let n = s.newSpecies
+            parts.append(today
+                         ? noun(n, "dnes přibyl \(n) druh", "dnes přibyly \(n) druhy", "dnes přibylo \(n) druhů",
+                                en: "\(n) new species today", "\(n) new species today")
+                         : noun(n, "poslední běh přidal \(n) druh", "poslední běh přidal \(n) druhy", "poslední běh přidal \(n) druhů",
+                                en: "the last run added \(n) species", "the last run added \(n) species"))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+private struct IVColumn: View {
+    let s: InventoryStats
+    @State private var hovered: Int?
+
+    var body: some View {
+        HeroColumn(symbol: "chart.bar.xaxis", title: tr("Průměrné IV", "Average IV"), sheet: .iv) {
+            BigNumber(value: percentText(s.ivAverage),
+                      caption: tr("u ", "of ") + trCount(s.total, cs: "kusu", "kusů", "kusů", en: "Pokémon", "Pokémon"))
+            let bins = Array(s.ivBins.enumerated()).filter { $0.element.count > 0 }
+            GeometryReader { geo in
+                let free = geo.size.width - 3 * CGFloat(max(0, bins.count - 1))
+                HStack(spacing: 3) {
+                    ForEach(bins, id: \.offset) { i, bin in
+                        let on = hovered == i
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(StatsColors.bin(bin.lower))
+                            .frame(width: max(6, free * CGFloat(bin.count) / CGFloat(max(1, s.total))))
+                            .opacity(hovered == nil || on ? 1 : 0.4)
+                            .overlay(alignment: .top) {
+                                if on {
+                                    Tip(text: ivBinLabel(bin.lower) + " · " + trCount(bin.count, cs: "kus", "kusy", "kusů", en: "Pokémon", "Pokémon"))
+                                        .offset(y: -28)
+                                }
+                            }
+                            .zIndex(on ? 1 : 0)
+                            .contentShape(Rectangle())
+                            .onTapGesture { open(.ivBin(i)) }
+                            .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
+                    }
+                }
+            }
+            .frame(height: 14)
+            .padding(.top, 4)
+            .animation(.easeOut(duration: 0.15), value: hovered)
+            .zIndex(1)
+            HStack {
+                Text(tr("90 % a víc", "90% or more"))
+                Spacer()
+                Text(tr("pod 70 %", "under 70%"))
+            }
+            .font(.system(size: 12)).foregroundStyle(Theme.muted)
+            Spacer(minLength: 0)
+            let top = s.ivBins.first?.count ?? 0
+            Footnote(text: noun(top, "\(top) kus má 90 % a víc.", "\(top) kusy mají 90 % a víc.", "\(number(top)) kusů má 90 % a víc.",
+                                en: "\(top) Pokémon is at 90% or more.", "\(number(top)) Pokémon are at 90% or more.")
+                     + tr(" Slabé kusy se průběžně mažou.", " Weak ones keep getting deleted."))
+        }
+    }
+}
+
+private struct HundoColumn: View {
+    let s: InventoryStats
+    @State private var hovered: Int?
+    @State private var all = false
+    static let shown = 16
+
+    var body: some View {
+        let gold = StatsColors.gold
+        HeroColumn(symbol: "crown.fill", title: "Hundo 15/15/15", symbolColor: gold,
+                   hoverFill: AnyShapeStyle(LinearGradient(colors: [gold.opacity(0.14), Theme.surface], startPoint: .topLeading,
+                                                           endPoint: UnitPoint(x: 0.75, y: 0.9))),
+                   sheet: .hundo) {
+            BigNumber(value: "\(s.hundos.count)",
+                      caption: noun(s.hundos.count, "kus se 100 %", "kusy se 100 %", "kusů se 100 %", en: "at 100%", "at 100%"))
+            if !s.hundos.isEmpty {
+                FlowRow(spacing: 8) {
+                    ForEach(all ? s.hundos : Array(s.hundos.prefix(Self.shown))) { m in
+                        let on = hovered == m.id
+                        MonIcon(m: m, size: 38, circle: true, ring: on ? gold : StatsColors.goldTint)
+                            .overlay(alignment: .topTrailing) {
+                                if m.isNew {
+                                    Circle().fill(Theme.green).frame(width: 11, height: 11)
+                                        .overlay(Circle().stroke(Theme.bg, lineWidth: 2))
+                                        .offset(x: 2, y: -2)
+                                }
+                            }
+                            .overlay(alignment: .top) {
+                                if on { Tip(text: m.name).offset(y: -28) }
+                            }
+                            .zIndex(on ? 1 : 0)
+                            .contentShape(Circle())
+                            .onTapGesture { open(.hundo, select: m.id) }
+                            .onHover { hovered = $0 ? m.id : (hovered == m.id ? nil : hovered) }
+                    }
+                    if s.hundos.count > Self.shown {
+                        Button {
+                            withAnimation(.snappy(duration: 0.25)) { all.toggle() }
+                        } label: {
+                            Group {
+                                if all { Image(systemName: "chevron.up").font(.system(size: 12, weight: .semibold)) }
+                                else { Text("+\(s.hundos.count - Self.shown)").font(.system(size: 12, weight: .semibold)).monospacedDigit() }
+                            }
+                            .foregroundStyle(gold)
+                            .frame(width: 38, height: 38)
+                            .overlay(Circle().stroke(StatsColors.goldTint, lineWidth: 2))
+                            .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(all ? tr("Skrýt", "Hide") : tr("Ukázat všechny", "Show all"))
+                    }
+                }
+                .padding(.top, 4)
+                .zIndex(1)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                if let fresh = s.hundos.first(where: \.isNew) {
+                    let today = s.runs.last.map { Calendar.current.isDateInToday($0.date) } ?? false
+                    Text(today ? tr("\(fresh.name) přibyl dnes · ", "\(fresh.name) arrived today · ")
+                               : tr("\(fresh.name) přibyl v posledním běhu · ", "\(fresh.name) arrived in the last run · "))
+                        .foregroundStyle(Theme.muted)
+                } else if s.hundos.isEmpty {
+                    Text(tr("Zatím žádný · ", "None yet · ")).foregroundStyle(Theme.muted)
+                }
+                TextLink(text: noun(s.nearPerfect, "\(s.nearPerfect) kus s 98 % a víc", "\(s.nearPerfect) kusy s 98 % a víc",
+                                    "\(s.nearPerfect) kusů s 98 % a víc", en: "\(s.nearPerfect) at 98% or more", "\(s.nearPerfect) at 98% or more")) {
+                    open(.nearPerfect)
+                }
+            }
+            .font(.system(size: 13)).lineLimit(1)
+        }
+    }
+}
+
+// MARK: - PvP hall of fame
+
+/// For each league the Pokémon with rank 1 (the best IVs for that league there are), with pictures;
+/// a league without one gets a dashed tile.
+private struct HallOfFame: View {
+    let s: InventoryStats
+    let pvp: PvPConfig
+    @State private var all = false
+    static let columns = 6
+
+    private enum Cell {
+        case tile(key: String, m: InventoryStats.Mon)
+        case empty(String)
+        var id: String {
+            switch self {
+            case .tile(let key, let m): return "\(key)-\(m.id)"
+            case .empty(let key): return "empty-" + key
             }
         }
     }
 
-    static func describe(_ run: InventoryStats.Run) -> String {
-        when(run.date) + " · " + details(run)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(tr("Síň slávy PvP", "PvP hall of fame")).font(.system(size: 19, weight: .medium)).tracking(-0.2)
+                Text(tr("nejlepší možné IV pro ligu", "the best possible IVs for the league"))
+                    .font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1)
+                Spacer(minLength: 8)
+                if s.ranked > 0 {
+                    TextLink(text: tr("Všech \(number(s.ranked)) kusů s pořadím", "All \(number(s.ranked)) ranked Pokémon"), arrow: true) {
+                        open(.pvp)
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                }
+            }
+            let lay = layout()
+            let rows = stride(from: 0, to: lay.cells.count, by: Self.columns).map { Array(lay.cells[$0..<min($0 + Self.columns, lay.cells.count)]) }
+            VStack(spacing: 12) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    WeightedRow(weights: Array(repeating: 1, count: Self.columns), spacing: 12, minColumn: 0) {
+                        ForEach(row, id: \.id) { cell in
+                            switch cell {
+                            case .tile(let key, let m):
+                                LeagueTile(m: m, key: key, league: league(key))
+                            case .empty(let key):
+                                EmptyLeagueTile(key: key, league: league(key),
+                                                best: s.mons.compactMap { m in m.ranks[key].map { (m, $0) } }.min { $0.1 < $1.1 })
+                            }
+                        }
+                        ForEach(0..<(Self.columns - row.count), id: \.self) { _ in Color.clear }
+                    }
+                }
+            }
+            if lay.hidden > 0 || all {
+                MoreButton(open: all, more: noun(lay.hidden, "Další \(lay.hidden) s pořadím 1", "Další \(lay.hidden) s pořadím 1",
+                                                 "Dalších \(lay.hidden) s pořadím 1", en: "\(lay.hidden) more at rank 1",
+                                                 "\(lay.hidden) more at rank 1")) { all.toggle() }
+                    .padding(.top, -6)
+            }
+        }
     }
 
-    static func details(_ run: InventoryStats.Run) -> String {
-        var parts = [duration(run.duration)]
-        if let n = run.checked { parts.append(tr("\(n) prošlo", "\(n) checked")) }
-        parts.append(trCount(run.errors, cs: "vyřešená chyba", "vyřešené chyby", "vyřešených chyb",
-                             en: "recovered error", "recovered errors"))
+    private func league(_ key: String) -> League { pvp.all.first { $0.key == key }?.league ?? pvp.great }
+
+    /// Rank-1 tiles taken from the leagues in turns (so every league with one shows up), then a tile for each
+    /// league with none. One row at first; expanded, every rank-1 Pokémon.
+    private func layout() -> (cells: [Cell], hidden: Int) {
+        // one tile per species in a league; a Pokémon under every CP cap can be #1 in several leagues
+        let firsts = pvp.all.map { item in
+            var seen = Set<String>()
+            return (item.key, s.mons.filter { $0.ranks[item.key] == 1 }
+                .sorted { $0.isNew != $1.isNew ? $0.isNew : ($0.pct, $0.cp) > ($1.pct, $1.cp) }
+                .filter { seen.insert($0.name).inserted })
+        }
+        let empty = firsts.filter { $0.1.isEmpty }.map { $0.0 }
+        let total = firsts.reduce(0) { $0 + $1.1.count }
+        let room = all ? total : Self.columns - empty.count
+        var picked: [String: Int] = [:]
+        var count = 0
+        var round = 0
+        while count < room && firsts.contains(where: { $0.1.count > round }) {
+            for (key, list) in firsts where list.count > round && count < room {
+                picked[key, default: 0] += 1
+                count += 1
+            }
+            round += 1
+        }
+        let tiles = firsts.flatMap { key, list in list.prefix(picked[key] ?? 0).map { Cell.tile(key: key, m: $0) } }
+        return (tiles + empty.map(Cell.empty), total - count)
+    }
+}
+
+private struct LeagueTile: View {
+    let m: InventoryStats.Mon
+    let key: String
+    let league: League
+    @State private var hovering = false
+
+    var body: some View {
+        Button { open(.league(key), select: m.id) } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                ZStack(alignment: .topLeading) {
+                    Theme.raise
+                    Group {
+                        if let img = MonImages.icon(m) {
+                            Image(nsImage: img).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                        } else {
+                            MonLetter(m: m, size: 128)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    HStack(spacing: 5) {
+                        Circle().fill(league.color.swatch).frame(width: 7, height: 7)
+                        Text("#1").font(.system(size: 11, weight: .bold))
+                    }
+                    .padding(.horizontal, 7).frame(height: 20)
+                    .background(Theme.bg.opacity(0.8), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .padding(8)
+                }
+                .frame(height: 128)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(m.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                    Text(league.name).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                }
+                .padding(.horizontal, 4)
+            }
+            .padding(EdgeInsets(top: 8, leading: 8, bottom: 12, trailing: 8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(hovering ? Theme.accent : Theme.border))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help("\(m.name) · \(percentText(m.pct)) · \(number(m.cp)) CP")
+    }
+}
+
+private struct EmptyLeagueTile: View {
+    let key: String
+    let league: League
+    let best: (InventoryStats.Mon, Int)?
+    @State private var hovering = false
+
+    var body: some View {
+        Button { open(.league(key), select: best?.0.id) } label: {
+            VStack(spacing: 6) {
+                Circle().fill(league.color.swatch).frame(width: 9, height: 9)
+                Text(league.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Text(tr("zatím nikdo s #1", "no one at #1 yet")).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                if let best {
+                    Text(tr("nejlépe #\(best.1) \(best.0.name)", "best #\(best.1) \(best.0.name)"))
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(hovering ? Theme.accent : Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+// MARK: - Species
+
+private struct TopSpeciesPanel: View {
+    let s: InventoryStats
+    @State private var all = false
+    static let shown = 3
+
+    var body: some View {
+        Panel {
+            PanelTitle(title: tr("Nejčastější druh", "Most common species"), sub: tr("víc kusů téhož", "several of the same"))
+            let dupes = s.topSpecies.filter { $0.count > 1 }
+            let top = all ? dupes : Array(dupes.prefix(Self.shown))
+            ForEach(top) { item in
+                let copies = s.mons.filter { $0.species == item.name }
+                let best = copies.max { ($0.pct, $0.cp) < ($1.pct, $1.cp) }
+                let tagged = copies.filter { $0.tags.contains(s.removeTag) }.count
+                RowButton(horizontal: 10, vertical: 6, radius: 10, action: { open(.species(item.name)) }) {
+                    HStack(spacing: 12) {
+                        if let best { MonIcon(m: best, size: 44, circle: true) }
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(item.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                            Text(sub(best, tagged)).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 6)
+                        Text("\(item.count)×").font(.system(size: 22, weight: .medium)).tracking(-0.4).monospacedDigit()
+                    }
+                }
+            }
+            if dupes.count > Self.shown {
+                let n = dupes.count - Self.shown
+                MoreButton(open: all, more: noun(n, "Další \(n) druh", "Další \(n) druhy", "Dalších \(n) druhů",
+                                                 en: "\(n) more species", "\(n) more species")) { all.toggle() }
+                    .padding(.top, 2)
+            }
+            if top.isEmpty {
+                Text(s.withSpecies == 0 ? tr("Ukáže se, až bot pozná druh.", "Shows up once the bot knows the species.")
+                                        : tr("Od každého druhu máš jen jeden kus.", "You have just one of each species."))
+                    .font(.system(size: 13)).foregroundStyle(Theme.muted)
+            }
+        }
+    }
+
+    private func sub(_ best: InventoryStats.Mon?, _ tagged: Int) -> String {
+        var parts: [String] = []
+        if let best { parts.append(tr("nejlepší ", "best ") + percentText(best.pct)) }
+        if tagged > 0 { parts.append(tr("\(tagged) s tagem \(s.removeTag)", "\(tagged) tagged \(s.removeTag)")) }
         return parts.joined(separator: " · ")
     }
+}
 
+private struct RarePanel: View {
+    let s: InventoryStats
+    @State private var all = false
+
+    var body: some View {
+        Panel {
+            PanelTitle(title: tr("Vzácné", "Rare"),
+                       sub: tr("z \(number(s.withSpecies)) kusů se známým druhem", "of \(number(s.withSpecies)) with known species"))
+            row("star.fill", tr("Legendy", "Legendary"), s.legendary, Theme.yellow, Theme.yellowTint, "legendary", \.legendary)
+            row("globe.americas.fill", "Ultra beasts", s.ultraBeast, Theme.blue, Theme.blueTint, "ultrabeast", \.ultraBeast)
+            row("sparkle", tr("Mýtičtí", "Mythical"), s.mythical, Theme.pink, Theme.pinkTint, "mythical", \.mythical)
+            let species = rareSpecies
+            if !species.isEmpty {
+                if all {
+                    Rectangle().fill(Theme.border).frame(height: 1).padding(.vertical, 6)
+                    ForEach(species, id: \.name) { sp in
+                        RowButton(horizontal: 10, vertical: 3, radius: 8, action: { open(.species(sp.name)) }) {
+                            HStack(spacing: 10) {
+                                MonIcon(m: sp.best, size: 30, circle: true)
+                                Text(sp.name).font(.system(size: 14, weight: .medium)).lineLimit(1)
+                                Image(systemName: sp.symbol).font(.system(size: 10)).foregroundStyle(sp.color)
+                                Spacer(minLength: 6)
+                                Text(tr("nejlepší ", "best ") + percentText(sp.best.pct)).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                                Text("\(sp.count)×").font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                                    .frame(minWidth: 32, alignment: .trailing)
+                            }
+                        }
+                    }
+                }
+                MoreButton(open: all, more: noun(species.count, "Ukázat \(species.count) druh", "Ukázat všechny \(species.count) druhy",
+                                                 "Ukázat všech \(species.count) druhů", en: "Show the \(species.count) species",
+                                                 "Show all \(species.count) species")) { all.toggle() }
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    /// Every rare species once: how many you have and the best one, the most frequent first.
+    private var rareSpecies: [(name: String, count: Int, best: InventoryStats.Mon, symbol: String, color: Color)] {
+        let rare = s.mons.filter { $0.legendary || $0.ultraBeast || $0.mythical }
+        return Dictionary(grouping: rare, by: \.name).compactMap { name, list in
+            guard let best = list.max(by: { ($0.pct, $0.cp) < ($1.pct, $1.cp) }) else { return nil }
+            let (symbol, color): (String, Color) = best.ultraBeast ? ("globe.americas.fill", Theme.blue)
+                : best.mythical ? ("sparkle", Theme.pink) : ("star.fill", Theme.yellow)
+            return (name, list.count, best, symbol, color)
+        }
+        .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+    }
+
+    private func row(_ symbol: String, _ label: String, _ n: Int, _ fg: Color, _ bg: Color, _ kind: String,
+                     _ flag: KeyPath<InventoryStats.Mon, Bool>) -> some View {
+        // one face per species, the best ones first
+        var seen = Set<String>()
+        let faces = s.mons.filter { $0[keyPath: flag] }.sorted { ($0.pct, $0.cp) > ($1.pct, $1.cp) }
+            .filter { seen.insert($0.name).inserted }.prefix(3)
+        return RowButton(horizontal: 10, vertical: 6, radius: 10, action: { open(.rare(kind)) }) {
+            HStack(spacing: 12) {
+                Image(systemName: symbol).font(.system(size: 19)).foregroundStyle(fg)
+                    .frame(width: 44, height: 44).background(bg, in: Circle())
+                Text(label).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                Spacer(minLength: 6)
+                HStack(spacing: -8) {
+                    ForEach(Array(faces)) { m in
+                        MonIcon(m: m, size: 30, circle: true, ring: Theme.surface)
+                    }
+                }
+                Text("\(n)").font(.system(size: 22, weight: .medium)).tracking(-0.4).monospacedDigit()
+                    .frame(minWidth: 44, alignment: .trailing)
+            }
+        }
+    }
+}
+
+// MARK: - Distributions
+
+/// Types, levels and tags as small bar charts, and three more numbers on the right.
+private struct DistributionPanel: View {
+    let s: InventoryStats
+    let config: AppConfig
+    @State private var allTypes = false
+    @State private var allTags = false
+    static let types = 6
+    static let tags = 5
+
+    var body: some View {
+        WeightedRow(weights: [1, 1, 1, 0.9], spacing: 32, minColumn: 150) {
+            column(tr("Typy", "Types")) {
+                let top = max(1, s.types.first?.count ?? 1)
+                ForEach(allTypes ? s.types : Array(s.types.prefix(Self.types))) { t in
+                    bar(t.name.capitalized, t.count, top, PokeType.color(t.name), labelWidth: 62) { open(.type(t.name)) }
+                }
+                if s.types.count > Self.types {
+                    let n = s.types.count - Self.types
+                    MoreButton(open: allTypes, more: noun(n, "Další \(n) typ", "Další \(n) typy", "Dalších \(n) typů",
+                                                          en: "\(n) more type", "\(n) more types")) { allTypes.toggle() }
+                        .padding(.top, 4)
+                }
+                if s.types.isEmpty { empty }
+            }
+            column(tr("Úrovně", "Levels")) {
+                let top = max(1, s.levels.map(\.count).max() ?? 1)
+                ForEach(Array(s.levels.enumerated()), id: \.offset) { i, l in
+                    bar(l.label, l.count, top, Theme.accent, labelWidth: 52) { open(.level(i)) }
+                }
+                if s.levels.isEmpty { empty }
+            }
+            column(tr("Tagy ve hře", "Tags in the game")) {
+                let tags = allTags ? s.tags : Array(s.tags.prefix(Self.tags))
+                let top = max(1, tags.first?.count ?? 1)
+                ForEach(tags) { t in
+                    bar(t.name, t.count, top, StatsTagColor.of(t.name, config), labelWidth: 96) { open(.tag(t.name)) }
+                }
+                if s.tags.count > Self.tags {
+                    let n = s.tags.count - Self.tags
+                    MoreButton(open: allTags, more: noun(n, "Další \(n) tag", "Další \(n) tagy", "Dalších \(n) tagů",
+                                                         en: "\(n) more tag", "\(n) more tags")) { allTags.toggle() }
+                        .padding(.top, 4)
+                }
+                if tags.isEmpty {
+                    Text(tr("Zatím bez tagů", "No tags yet")).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                more(tr("Nejsilnější", "Strongest"), number(s.topCP?.cp ?? 0), "CP" + (s.topCP.map { " · " + $0.name } ?? ""), .strong)
+                more(tr("Ještě vyvinout", "Still to evolve"), number(s.canEvolve),
+                     noun(s.canEvolve, "kus", "kusy", "kusů", en: "Pokémon", "Pokémon"), .evolve)
+                more(tr("Duplicity", "Duplicates"), number(s.duplicateSpecies),
+                     noun(s.duplicateSpecies, "druh", "druhy", "druhů", en: "species", "species")
+                        + (s.removable > 0 ? " · \(number(s.removable)) \(s.removeTag)" : ""), .duplicates)
+            }
+            .padding(.leading, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .overlay(alignment: .leading) { Rectangle().fill(Theme.border).frame(width: 1) }
+        }
+        .padding(EdgeInsets(top: 18, leading: 22, bottom: 20, trailing: 22))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
+    }
+
+    private var empty: some View {
+        Text(tr("Ukáže se, až bot pozná druh.", "Shows up once the bot knows the species.")).font(.system(size: 12)).foregroundStyle(Theme.muted)
+    }
+
+    private func column<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.system(size: 14, weight: .medium)).padding(.bottom, 8)
+            content()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func bar(_ label: String, _ n: Int, _ top: Int, _ color: Color, labelWidth: CGFloat, action: @escaping () -> Void) -> some View {
+        RowButton(action: action) {
+            HStack(spacing: 8) {
+                Text(label).font(.system(size: 12)).monospacedDigit().lineLimit(1).frame(width: labelWidth, alignment: .leading)
+                Meter(fraction: Double(n) / Double(top), height: 6, color: color, radius: 3)
+                Text("\(n)").font(.system(size: 12)).foregroundStyle(Theme.muted).monospacedDigit().frame(minWidth: 24, alignment: .trailing)
+            }
+        }
+    }
+
+    private func more(_ label: String, _ value: String, _ sub: String, _ sheet: StatsSheet) -> some View {
+        RowButton(horizontal: 8, vertical: 6, radius: 8, action: { open(sheet) }) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(value).font(.system(size: 22, weight: .medium)).tracking(-0.4).monospacedDigit()
+                    Text(sub).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Run texts
+
+enum RunText {
     /// "today 14:32", "yesterday 9:05", otherwise "2. 10. 21:16".
     static func when(_ date: Date) -> String {
         let cal = Calendar.current
@@ -612,17 +924,19 @@ private struct EmptyStats: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Co IVory zná", "What IVory knows")).font(.system(size: 26, weight: .medium)).tracking(-0.5)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("Co IVory zná", "What IVory knows")).font(.system(size: 28, weight: .medium)).tracking(-0.56)
                 Text(runs == 0 ? tr("Zatím žádný běh", "No runs yet") : tr("Paměť je zatím prázdná", "The memory is still empty"))
                     .font(.system(size: 13)).foregroundStyle(Theme.muted)
             }
             ZStack(alignment: .top) {
                 VStack(spacing: 12) {
-                    WeightedRow(weights: [1.35, 1, 0.8], minColumn: 0) {
+                    WeightedRow(weights: [1, 1, 1], minColumn: 0) {
                         ghost(hatched: true, 200); ghost(hatched: true, 200); ghost(hatched: true, 200)
                     }
-                    WeightedRow(weights: [1.6, 1], minColumn: 0) { ghost(hatched: false, 150); ghost(hatched: false, 150) }
+                    WeightedRow(weights: Array(repeating: 1, count: 6), minColumn: 0) {
+                        ForEach(0..<6, id: \.self) { _ in ghost(hatched: false, 170) }
+                    }
                 }
                 .opacity(0.4)
                 VStack(spacing: 12) {

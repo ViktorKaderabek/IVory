@@ -31,6 +31,7 @@ enum SnapshotExport {
             code |= save(settings, scheme, dir.appendingPathComponent("settings_\(name).png"))
             UserDefaults.standard.set(saved, forKey: "settingsOpenSections")
             for (suffix, data) in [("", InventoryStats.load(removeTag: store.config.removeTag)), ("_empty", InventoryStats())] {
+                MonImages.reset(for: data)
                 let stats = StatsView(preloaded: data) {}
                     .padding(EdgeInsets(top: 22, leading: 28, bottom: 26, trailing: 28))
                     .frame(width: 1040)
@@ -39,6 +40,19 @@ enum SnapshotExport {
                     .environmentObject(store).environmentObject(runner)
                     .environment(\.colorScheme, scheme)
                 code |= save(stats, scheme, dir.appendingPathComponent("stats\(suffix)_\(name).png"))
+                guard !data.isEmpty else { continue }
+                let sheets: [(String, StatsSheet)] = [("hundo", .hundo), ("pvp", .pvp), ("species", .species(data.topSpecies.first?.name ?? "")),
+                                                      ("coverage", .coverage), ("run", .run(data.runs.last?.id ?? ""))]
+                for (key, sheet) in sheets {
+                    let panel = StatsSheetPanel(def: .make(sheet, data, store.config), stats: data, startRun: {}, scrolls: false)
+                        .frame(width: 940, height: 660)
+                        .padding(24)
+                        .background(Theme.bg)
+                        .foregroundStyle(Theme.text)
+                        .environmentObject(store).environmentObject(runner)
+                        .environment(\.colorScheme, scheme)
+                    code |= save(panel, scheme, dir.appendingPathComponent("stats_sheet_\(key)_\(name).png"))
+                }
             }
             let editor = RenameEditor(config: .constant(store.config.rename), samples: NameSample.design)
                 .environment(\.colorScheme, scheme)
