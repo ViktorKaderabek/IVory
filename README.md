@@ -1,9 +1,11 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="docs/banner-light.svg">
-    <img alt="IVory: a Mac app that cleans up your Pokémon GO inventory" src="docs/banner-light.svg" width="100%">
-  </picture>
+  <a href="https://github.com/ViktorKaderabek/IVory/releases/latest">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/banner-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/banner-light.svg">
+      <img alt="IVory: a Mac app that cleans up your Pokémon GO inventory" src="docs/banner-light.svg" width="100%">
+    </picture>
+  </a>
 </p>
 
 <p align="center">
@@ -24,19 +26,29 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ViktorKaderabek/IVory/releases/latest/download/IVory.dmg"><b>⬇&nbsp; Download IVory for Mac</b></a>
-  &nbsp;·&nbsp; <a href="#installation">Installation</a>
+  <a href="https://github.com/ViktorKaderabek/IVory/releases/latest/download/IVory.dmg">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/download-dark.svg">
+      <source media="(prefers-color-scheme: light)" srcset="docs/download-light.svg">
+      <img alt="Download IVory for Mac" src="docs/download-light.svg" width="420">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <a href="#installation">Installation</a>
   &nbsp;·&nbsp; <a href="#risks-and-responsibility">Risks</a>
   &nbsp;·&nbsp; <a href="#what-it-does">Features</a>
+  &nbsp;·&nbsp; <a href="#how-fast-is-it">Speed</a>
   &nbsp;·&nbsp; <a href="#how-it-works">How it works</a>
   &nbsp;·&nbsp; <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/running-dark.webp">
-    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/running-light.webp">
-    <img alt="IVory sorting the storage into IV tags" src="docs/screenshots/running-light.webp" width="820">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/running-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/running-light.svg">
+    <img alt="IVory sorting the storage, with Settings open on the right" src="docs/running-light.svg" width="100%">
   </picture>
 </p>
 
@@ -53,11 +65,27 @@ By using IVory you confirm that:
 
 IVory never transfers Pokémon. It only adds tags and nicknames, and it cancels every confirmation dialog. Mistakes are still possible, so check the tags before you transfer anything yourself.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/safety-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/safety-light.svg">
+    <img alt="Safety net: TRANSFER, YES, CONFIRM, TRADE, BUY, PURCHASE and RELEASE are never tapped, nor anything in their row; confirmation dialogs are always cancelled" src="docs/safety-light.svg" width="100%">
+  </picture>
+</p>
+
 The app asks you to confirm this on first launch.
 
 <sub>IVory is not affiliated with, endorsed or sponsored by Niantic, Inc., The Pokémon Company or Nintendo. Pokémon and Pokémon GO are trademarks of their respective owners.</sub>
 
 ## What it does
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/steps-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/steps-light.svg">
+    <img alt="Four steps: Duplicates, IV tags, PvP tags, Rename. Combine them as you like; they always run in this order" src="docs/steps-light.svg" width="100%">
+  </picture>
+</p>
 
 IVory runs up to four steps. Combine them as you like; they always run in this order:
 
@@ -69,6 +97,14 @@ IVory runs up to four steps. Combine them as you like; they always run in this o
 | ✏️ **Rename** | Pokémon in an IV range (85–100 % by default) get a name built from your template, e.g. `91 Bax M30` = 91 % IV, final evolution Baxcalibur, rank 30 in Master League. Custom nicknames are left alone. |
 
 Tags that are missing in the game are created at the start, in the color you picked (the game offers 8 colors).
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/anatomy-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/anatomy-light.svg">
+    <img alt="One Pokémon, start to finish: IVs 14/13/14 read from the appraisal, 91 % computed, PvP ranks G12 U5 M30, tags and the name 91 Bax M30 written" src="docs/anatomy-light.svg" width="100%">
+  </picture>
+</p>
 
 > [!IMPORTANT]
 > IVory **never transfers anything**. It only tags and renames. The transfer is up to you:
@@ -100,38 +136,35 @@ measured IVs are remembered for a few hours.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ready-dark.webp">
-    <img src="docs/screenshots/ready-light.webp" alt="IVory ready to start" width="820">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/shot-ready-dark.svg">
+    <img src="docs/shot-ready-light.svg" alt="IVory ready to start" width="820">
   </picture><br>
   <sub><b>Ready.</b> Tick the steps and press <i>Start</i> (or Enter).</sub>
 </p>
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/done-dark.webp">
-    <img src="docs/screenshots/done-light.webp" alt="IVory after a finished run" width="820">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/shot-stats-dark.svg">
+    <img src="docs/shot-stats-light.svg" alt="IVory Stats: Pokédex, average IV, hundos, PvP hall of fame, common and rare species" width="820">
   </picture><br>
-  <sub><b>Done.</b> The tiles and the <i>Tags in your storage</i> panel stay as a summary of the run.</sub>
+  <sub><b>Stats.</b> What IVory knows about your storage: Pokédex, average IV, hundos, the PvP hall of fame, the most common species and the rare ones.</sub>
 </p>
 
-<table>
-  <tr>
-    <td width="40%" valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.webp">
-        <img src="docs/screenshots/settings-light.webp" alt="IVory settings with PvP leagues and renaming">
-      </picture><br>
-      <sub><b>Settings.</b> Language and updates on top, PvP leagues with rank limits and tag colors, the IV range for renaming and the name template.</sub>
-    </td>
-    <td width="60%" valign="top">
-      <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.webp">
-        <img src="docs/screenshots/editor-light.webp" alt="Name template editor">
-      </picture><br>
-      <sub><b>Name template.</b> Build names from pieces; the preview shows what fits into the game's 12 characters.</sub>
-    </td>
-  </tr>
-</table>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/shot-hall-of-fame-dark.svg">
+    <img src="docs/shot-hall-of-fame-light.svg" alt="PvP hall of fame for Master League" width="820">
+  </picture><br>
+  <sub><b>PvP hall of fame.</b> Every ranked Pokémon of a league with its picture from the game, IVs, CP and ranks in all three leagues. <i>Copy</i> puts the search for the game on the clipboard.</sub>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/shot-settings-panel-dark.svg">
+    <img src="docs/shot-settings-panel-light.svg" alt="IVory with Settings open next to the main window" width="820">
+  </picture><br>
+  <sub><b>Settings.</b> Slide in from the right: language, updates and run results on top, then every step with its own section, the IV range and the name template.</sub>
+</p>
 
 Light and dark appearance follow macOS. The app is in English or Czech: it follows your system language and you can switch it any time in Settings, even while sorting.
 
@@ -169,19 +202,35 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
 5. Connect your iPhone and press **Start**.
    The first start sets everything up by itself and shows each step in the app:
 
-   | | What IVory installs | Where |
-   |---|---|---|
-   | 1 | Node.js 24 (official build from nodejs.org), only if you don't have Node 20+ already | `~/.pogo/runtime/node` |
-   | 2 | Appium 3 and its XCUITest driver (includes WebDriverAgent) | `~/.pogo/runtime/node`, `~/.appium` |
-   | 3 | Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)) | `~/.pogo/runtime/python` |
-   | 4 | Python libraries: Appium client, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/setup-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/setup-light.svg">
+    <img alt="First start: Node.js 24, Appium 3 with the XCUITest driver, Python 3.12, the Python libraries and WebDriverAgent are set up by IVory itself" src="docs/setup-light.svg" width="100%">
+  </picture>
+</p>
 
-   Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI (`core/requirements.txt`). It takes a few minutes, needs no password and is skipped on later starts.
-   On the first run Xcode also builds and signs WebDriverAgent on your iPhone, which takes another minute or two.
+<details>
+<summary><b>What exactly gets installed, and where</b></summary>
+<br>
+
+| | What IVory installs | Where |
+|---|---|---|
+| 1 | Node.js 24 (official build from nodejs.org), only if you don't have Node 20+ already | `~/.pogo/runtime/node` |
+| 2 | Appium 3 and its XCUITest driver (includes WebDriverAgent) | `~/.pogo/runtime/node`, `~/.appium` |
+| 3 | Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)) | `~/.pogo/runtime/python` |
+| 4 | Python libraries: Appium client, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
+
+Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI (`core/requirements.txt`). It takes a few minutes, needs no password and is skipped on later starts.
+On the first run Xcode also builds and signs WebDriverAgent on your iPhone, which takes another minute or two.
+
+</details>
 
 ### Updates
 
 IVory checks for a new version when it starts and then once a day. When there is one, a banner shows up above the main card:
+
+<p align="center"><img src="docs/shot-update-banner-light.svg" alt="Update banner: IVory 1.2.0 is ready, with What's new and Restart" width="820"></p>
 
 1. **What's new** opens the release notes, **Download** fetches the new version in the background. You can keep working.
 2. The download is checked against the SHA-256 checksum published with the release.
@@ -191,6 +240,10 @@ IVory never updates by itself and you can't restart while it's sorting: the bann
 The × hides the banner until the next start. You can also check by hand or turn the automatic check off in **Settings → Updates**.
 
 ### Build from source
+
+<details>
+<summary>Clone, build and install the app yourself</summary>
+<br>
 
 ```bash
 git clone https://github.com/ViktorKaderabek/IVory.git
@@ -203,6 +256,8 @@ Without `--install` the app stays in `dist/`. To build the installer DMG yoursel
 ```bash
 bash scripts/build_dmg.sh           # → dist/IVory.dmg
 ```
+
+</details>
 
 ## iPhone setup (one time)
 
@@ -226,7 +281,9 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
    The **Tags in your storage** panel shows how many Pokémon are in each tag. Next to it is a detailed log you can select and copy.
 3. **Stop** ends the run cleanly and saves the results. **Results** in the toolbar opens the results folder.
 
-**Settings** slide in from the right. The sections can be collapsed:
+<details>
+<summary><b>Settings</b> slide in from the right. The sections can be collapsed:</summary>
+<br>
 
 - **Duplicates**: the search typed into the game, the tag for worse duplicates and its color, how many of the best to keep.
 - **IV tags**: thresholds in percent, name and color of every tag (click the dot to pick a color).
@@ -237,6 +294,8 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 - **About**: version, license, the risk notice, when you confirmed it and **Revoke consent** (the notice shows up again on the next start).
 
 Everything is saved automatically to `~/.pogo/config.json`.
+
+</details>
 
 ### Terminal
 
@@ -252,16 +311,13 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A["IVory.app<br/>(SwiftUI)"] -- "starts" --> B["run.sh"]
-    B --> C["Appium server<br/>+ XCUITest"]
-    B --> D["pogo_bot.py"]
-    D -- "taps, swipes, typing" --> C
-    C -- "WebDriverAgent" --> E["📱 iPhone<br/>Pokémon GO"]
-    E -- "MJPEG video ~15 fps" --> D
-    D -- "events @@{json}" --> A
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/how-it-works-light.svg">
+    <img alt="IVory.app starts pogo_bot.py, which sends taps, swipes and typing through the Appium server and WebDriverAgent to the iPhone; the iPhone streams MJPEG video back to the bot, and the bot sends events to the app" src="docs/how-it-works-light.svg" width="100%">
+  </picture>
+</p>
 
 - The iPhone is controlled through **Appium + WebDriverAgent** (XCUITest), the same tooling used for automated iOS app tests.
 - The screen arrives as a video stream (~15 fps) and text is read with **Apple Vision** OCR right on the Mac.
@@ -271,6 +327,14 @@ flowchart LR
 - Species, level, CP after evolution and PvP ranks are computed from CP, HP and IVs using game data shipped in `core/pokedata.json` (PvPoke game master and CP multipliers). Nothing is downloaded while running.
 - The bot recognizes about 15 game screens, so it finds its way back to the storage from anywhere and recovers from popups, game crashes and dropped connections.
 - **Safety net:** before every tap it checks that `TRANSFER`, `EVOLVE`, `POWER UP` or `YES` is not nearby, and it always cancels confirmation dialogs (`CANCEL` / `NO`).
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/batch-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/batch-light.svg">
+    <img alt="Batch tagging through search: IVory types cp2260,cp2268,cp1705, the game shows just those three Pokémon, IVory selects them all and tags them at once" src="docs/batch-light.svg" width="100%">
+  </picture>
+</p>
 
 <details>
 <summary><b>How IV %, PvP rank and the name pieces are calculated</b></summary>
@@ -286,6 +350,10 @@ flowchart LR
 ## Configuration
 
 `~/.pogo/config.json`: the app writes it, the bot reads it.
+
+<details>
+<summary><b>All keys and their defaults</b></summary>
+<br>
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -307,7 +375,13 @@ flowchart LR
 | `fast_mode` | `true` | `false` = the old slow mode that opens every Pokémon separately |
 | `consent_version`, `consent_at`, `app_version` | – | written when you confirm the risk notice (in the app or in Terminal). Revoke it in Settings → About. |
 
+</details>
+
 ## Files
+
+<details>
+<summary><b>Everything IVory writes to your Mac</b></summary>
+<br>
 
 | Path | Contents |
 |---|---|
@@ -321,7 +395,13 @@ flowchart LR
 | `~/Library/Caches/IVory` | a downloaded update until it's installed |
 | `~/Desktop/pogo_runs/<date_time>/` | results of a run: `log.txt`, `result.json`, `result_iv_tagy.json`, `iv/` (crops of the IV bars) and `chyba_XX/` (screens from the moment something went wrong) |
 
+</details>
+
 ## Project layout
+
+<details>
+<summary><b>Where things live in this repository</b></summary>
+<br>
 
 ```
 app/                 Mac app (SwiftUI), build script, icon
@@ -338,7 +418,13 @@ docs/                images for this README
 Start.command        double-click launcher without the app
 ```
 
+</details>
+
 ## Releasing a new version
+
+<details>
+<summary><b>Three steps to publish a release</b></summary>
+<br>
 
 1. Raise `CFBundleShortVersionString` (and `CFBundleVersion`) in `app/Info.plist`, e.g. `1.2.0`.
 2. Build the installer: `bash scripts/build_dmg.sh` → `dist/IVory.dmg`.
@@ -349,6 +435,8 @@ Start.command        double-click launcher without the app
    ```
 
 Apps from 1.1.0 on find the release by themselves and offer the update.
+
+</details>
 
 ## Tests
 
@@ -362,14 +450,53 @@ cd tests
 
 ## Troubleshooting
 
-- **“IVory can't be opened” / “Apple could not verify…”:** System Settings → Privacy & Security → **Open Anyway** (see [Installation](#download-recommended)).
-- **“Xcode is missing” / “Xcode isn't set up yet”:** install Xcode from the App Store, open it once and let it install its components, then press Start again.
-- **The first start fails while downloading:** check the internet connection and press Start again. Finished parts are kept, so it continues where it stopped.
-- **“No iPhone found”:** unlock the phone, connect it by cable and confirm *Trust*. Turn on Developer Mode.
-- **“Not authorized for performing UI testing actions”:** on the iPhone, turn on Settings → Developer → *Enable UI Automation*. IVory restarts WebDriverAgent once by itself before giving up.
-- **WebDriverAgent can't be signed:** check the Team ID in Settings → iPhone and that your Apple ID is signed in to Xcode. A free signature lasts 7 days; Appium signs it again on the next start.
-- **The bot gets stuck or taps the wrong spot:** the `chyba_XX` folder of the last run has screenshots of the last steps with the tap marked.
-- **Game in another language:** the game's UI strings live in the `L` dictionary in `core/ivory/config.py`.
+<details>
+<summary><b>“IVory can't be opened” / “Apple could not verify…”</b></summary>
+
+System Settings → Privacy & Security → **Open Anyway** (see [Installation](#download-recommended)).
+</details>
+
+<details>
+<summary><b>“Xcode is missing” / “Xcode isn't set up yet”</b></summary>
+
+Install Xcode from the App Store, open it once and let it install its components, then press Start again.
+</details>
+
+<details>
+<summary><b>The first start fails while downloading</b></summary>
+
+Check the internet connection and press Start again. Finished parts are kept, so it continues where it stopped.
+</details>
+
+<details>
+<summary><b>“No iPhone found”</b></summary>
+
+Unlock the phone, connect it by cable and confirm *Trust*. Turn on Developer Mode.
+</details>
+
+<details>
+<summary><b>“Not authorized for performing UI testing actions”</b></summary>
+
+On the iPhone, turn on Settings → Developer → *Enable UI Automation*. IVory restarts WebDriverAgent once by itself before giving up.
+</details>
+
+<details>
+<summary><b>WebDriverAgent can't be signed</b></summary>
+
+Check the Team ID in Settings → iPhone and that your Apple ID is signed in to Xcode. A free signature lasts 7 days; Appium signs it again on the next start.
+</details>
+
+<details>
+<summary><b>The bot gets stuck or taps the wrong spot</b></summary>
+
+The `chyba_XX` folder of the last run has screenshots of the last steps with the tap marked.
+</details>
+
+<details>
+<summary><b>Game in another language</b></summary>
+
+The game's UI strings live in the `L` dictionary in `core/ivory/config.py`.
+</details>
 
 ## Uninstall
 
