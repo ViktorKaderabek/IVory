@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Upozornění na rizika: okno přes celou aplikaci při prvním spuštění (a po změně textu),
-/// dokud uživatel nepotvrdí všechna tři zaškrtávátka. Bez souhlasu nejde nic spustit.
+/// Risk notice: a window over the whole app on first launch (and after the text changes)
+/// until the user ticks all three checkboxes. Nothing can be started without consent.
 enum Consent {
-    /// Verze textu upozornění. Po změně textu zvýšit – okno se pak ukáže znovu.
-    /// Stejné číslo je v scripts/run.sh (CONSENT_VERSION).
+    /// Version of the notice text. Bump it when the text changes, and the window shows again.
+    /// scripts/run.sh has the same number (CONSENT_VERSION).
     static let version = 1
 
     struct Risk: Identifiable {
@@ -57,7 +57,7 @@ enum Consent {
         store.save()
     }
 
-    /// Odvolání: okno se ukáže při dalším spuštění.
+    /// Revoking: the window shows up on the next launch.
     @MainActor static func revoke(_ store: ConfigStore) {
         store.config.consentVersion = 0
         store.config.consentAt = ""
@@ -65,7 +65,7 @@ enum Consent {
         store.save()
     }
 
-    /// „3. 10. 2026 13:40“ / „Oct 3, 2026 at 1:40 PM“
+    /// "3. 10. 2026 13:40" / "Oct 3, 2026 at 1:40 PM"
     static func dateText(_ iso: String) -> String? {
         guard let date = ISO8601DateFormatter().date(from: iso) else { return nil }
         let f = DateFormatter()
@@ -76,7 +76,7 @@ enum Consent {
     }
 }
 
-/// Seznam rizik (okno se souhlasem i Nastavení → O aplikaci).
+/// The list of risks (the consent window and Settings → About).
 struct ConsentRiskList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -105,7 +105,7 @@ struct ConsentRiskList: View {
     }
 }
 
-/// Okno se souhlasem přes celou aplikaci (pod lištou). Nejde zavřít křížkem ani Esc.
+/// The consent window over the whole app (below the toolbar). It can't be closed with the × button or Esc.
 struct ConsentOverlay: View {
     @EnvironmentObject private var store: ConfigStore
     let onAccept: () -> Void
@@ -119,7 +119,7 @@ struct ConsentOverlay: View {
             Theme.bg.opacity(0.55)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
-                .onTapGesture {}            // kliknutí mimo okno nic neudělá
+                .onTapGesture {}            // clicking outside the window does nothing
             ScrollView {
                 dialog
                     .padding(.top, 56)
@@ -205,7 +205,7 @@ struct ConsentOverlay: View {
         .accessibilityAddTraits(.isModal)
     }
 
-    /// Zaškrtávátko přes celý řádek (klik i mezerník).
+    /// A checkbox spanning the whole row (click or Space).
     private struct CheckRow: View {
         let label: String
         @Binding var isOn: Bool
@@ -247,7 +247,7 @@ struct ConsentOverlay: View {
     }
 }
 
-/// Nastavení → O aplikaci: verze, licence, text upozornění, datum souhlasu a jeho odvolání.
+/// Settings → About: version, license, the notice text, the consent date and revoking consent.
 struct AboutContent: View {
     @EnvironmentObject private var store: ConfigStore
     @State private var revoked = false

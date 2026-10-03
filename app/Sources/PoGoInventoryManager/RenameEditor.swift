@@ -2,8 +2,9 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Editor šablony jména (list nad oknem). Dílky se přidávají kliknutím, pořadí se mění přetažením,
-/// vlastní text se píše přímo do dílku. Náhled ukazuje 4 kusy a počítadlo nejdelší jméno z nich.
+/// Name template editor (a sheet over the window). Pieces are added by clicking and reordered by dragging;
+/// custom text is typed straight into the piece. The preview shows 4 Pokémon, and the counter shows the length
+/// of the longest of their names.
 struct RenameEditor: View {
     @Binding var config: RenameConfig
     let samples: [NameSample]
@@ -12,7 +13,7 @@ struct RenameEditor: View {
     @State private var dragging: UUID?
     @State private var bodyHeight: CGFloat = 560
     @State private var visibleHeight: CGFloat = 560
-    /// Výška okna pod listem: list nesmí být vyšší (jinak by přečníval přes spodek okna).
+    /// Height of the window under the sheet: the sheet must not be taller (it would stick out past the window bottom).
     @State private var parentHeight: CGFloat?
     @State private var sheetHeight: CGFloat = 720
 
@@ -33,8 +34,8 @@ struct RenameEditor: View {
             }
             .padding(EdgeInsets(top: 24, leading: 24, bottom: 16, trailing: 24))
 
-            // Nadpis a tlačítka stojí, prostředek se posouvá, když se list do okna nevejde
-            // (dlouhá šablona, varování) – jinak by obsah přetekl nahoru i dolů za okraj listu.
+            // The title and buttons stay put, the middle scrolls when the sheet doesn't fit in the window
+            // (long template, warning) – otherwise the content would overflow past the sheet's top and bottom edges.
             ScrollView {
                 editorBody
                     .padding(.horizontal, 24)
@@ -59,10 +60,10 @@ struct RenameEditor: View {
 
     private var scrolls: Bool { bodyHeight > visibleHeight + 1 }
 
-    /// Prostředek je vysoký jako obsah, nejvýš tak, aby se celý list vešel do okna.
+    /// The middle is as tall as its content, at most so tall that the whole sheet fits in the window.
     private var scrollHeight: CGFloat {
         guard let parentHeight else { return bodyHeight }
-        let chrome = sheetHeight - visibleHeight   // nadpis + tlačítka
+        let chrome = sheetHeight - visibleHeight   // title + buttons
         return max(160, min(bodyHeight, parentHeight - 24 - chrome))
     }
 
@@ -131,7 +132,7 @@ struct RenameEditor: View {
 
     private var rangeText: String { pctRange(config.min, config.max) }
 
-    // MARK: Šablona
+    // MARK: Template
 
     private var chipsField: some View {
         FlowRow(spacing: 6) {
@@ -194,7 +195,7 @@ struct RenameEditor: View {
         .foregroundStyle(Theme.text)
     }
 
-    // MARK: Náhled
+    // MARK: Preview
 
     private struct Row {
         let sample: NameSample
@@ -242,7 +243,6 @@ struct RenameEditor: View {
                                     .font(.system(size: 14, weight: .semibold))
                                 if row.count > NamePiece.maxLength {
                                     Text(tr("zkrátí se", "gets cut")).font(.system(size: 12)).foregroundStyle(Theme.red)
-
                                 }
                             }
                         }
@@ -261,7 +261,7 @@ struct RenameEditor: View {
     }
 }
 
-/// Zjistí výšku okna, nad kterým list visí, a hlídá ji i při změně velikosti okna.
+/// Finds the height of the window the sheet hangs over and keeps tracking it when the window is resized.
 private struct ParentHeightReader: NSViewRepresentable {
     @Binding var height: CGFloat?
 
@@ -282,7 +282,7 @@ private struct ParentHeightReader: NSViewRepresentable {
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
             guard window != nil else { return }
-            // v tuhle chvíli list ještě nemusí být k oknu připojený (sheetParent je nil)
+            // at this point the sheet may not be attached to the window yet (sheetParent is nil)
             DispatchQueue.main.async { [weak self] in self?.attach() }
         }
 
@@ -301,7 +301,7 @@ private struct ParentHeightReader: NSViewRepresentable {
     }
 }
 
-/// Plné tlačítko v barvě akcentu (Hotovo).
+/// Filled button in the accent color (Done).
 struct FilledButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -314,7 +314,7 @@ struct FilledButtonStyle: ButtonStyle {
     }
 }
 
-/// Řádek, který se zalamuje (dílky šablony, nabídka dílků).
+/// A row that wraps (template pieces, the piece menu).
 struct FlowRow: Layout {
     var spacing: CGFloat = 6
 

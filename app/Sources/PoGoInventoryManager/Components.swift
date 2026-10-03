@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - Kroky
+// MARK: - Steps
 
-/// Karta kroku se zaškrtávátkem. Kroky jdou libovolně kombinovat, poslední zapnutý vypnout nejde.
+/// A step card with a checkbox. Steps can be combined freely; the last step that is on can't be turned off.
 struct StepCard: View {
     let step: Runner.Step
     let detail: String
@@ -60,9 +60,9 @@ struct StepCard: View {
     }
 }
 
-// MARK: - Fáze
+// MARK: - Phases
 
-/// Čtyři fáze (Duplicity → IV tagy → PvP tagy → Přejmenování) se spojnicemi, které se plní.
+/// The four phases (duplicates → IV tags → PvP tags → renaming) with connectors that fill up.
 struct PhasePanel: View {
     @EnvironmentObject private var runner: Runner
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -77,7 +77,7 @@ struct PhasePanel: View {
                             Capsule().fill(Theme.track)
                             Capsule().fill(Theme.progress).frame(width: geo.size.width * fill(before: step))
                             if flowing(before: step) {
-                                // fáze vlevo právě běží: po spojnici k další fázi běží světlo
+                                // the phase on the left is running: a light runs along the connector to the next phase
                                 FlowStripe(reduceMotion: reduceMotion)
                                     .clipShape(Capsule())
                                     .transition(.opacity)
@@ -100,15 +100,15 @@ struct PhasePanel: View {
 
     private var shownSteps: Steps { HeroState(runner: runner) == .ready ? steps : runner.steps }
 
-    /// Kterou fázi bot zrovna dělá (nebo dělal, když skončil).
+    /// The phase the bot is working on (or was, when it finished).
     private var current: Int {
         let p = runner.stats.phase
         if p == 0 { return Runner.Step.allCases.first { $0.isOn(shownSteps) }?.rawValue ?? 1 }
         return p
     }
 
-    /// Spojnice před krokem: plná, když je předchozí krok hotový. Během běhu předchozího ukazuje,
-    /// kolik z něj je hotovo – jen když to bot hlásí (čtení IV); jinak zůstane prázdná a běží po ní světlo.
+    /// The connector before a step: full once the previous step is done. While the previous step runs, it shows
+    /// its progress, but only when the bot reports it (IV reading); otherwise it stays empty and a light runs along it.
     private func fill(before step: Runner.Step) -> CGFloat {
         let prev = step.rawValue - 1
         switch HeroState(runner: runner) {
@@ -121,7 +121,7 @@ struct PhasePanel: View {
         }
     }
 
-    /// Po spojnici za právě běžící fází běží světlo.
+    /// A light runs along the connector after the phase that is running.
     private func flowing(before step: Runner.Step) -> Bool {
         HeroState(runner: runner) == .running && current == step.rawValue - 1
     }
@@ -206,9 +206,9 @@ struct PhaseStep: View {
     }
 }
 
-// MARK: - Dlaždice
+// MARK: - Tiles
 
-/// Dlaždice s číslem, které se přetočí a při změně poskočí. Nula je ztlumená.
+/// A tile with a number that rolls and bounces when it changes. Zero is dimmed.
 struct StatTile: View {
     let symbol: String
     let title: String
@@ -247,10 +247,10 @@ struct StatTile: View {
     }
 }
 
-// MARK: - Výpis
+// MARK: - Log
 
-/// Tmavá konzole s barevnými řádky výpisu (tmavá v obou režimech).
-/// Výpis jako v terminálu: dá se označit myší (i přes víc řádků), Cmd+A, Cmd+C, pravým tlačítkem Kopírovat.
+/// A dark console with colored log lines (dark in both light and dark mode).
+/// Works like a terminal: select with the mouse (across several lines too), Cmd+A, Cmd+C, right-click Copy.
 struct LogConsole: View {
     let lines: [Runner.LogLine]
 
@@ -274,8 +274,8 @@ struct LogConsole: View {
     }
 }
 
-/// NSTextView pod výpisem: nové řádky jen připisuje (rychlé i se 4000 řádky), označení zůstává,
-/// a když je výpis dole, jede s ním.
+/// The NSTextView behind the log: it only appends new lines (fast even with 4000 lines), keeps the selection,
+/// and follows the log while it is scrolled to the bottom.
 struct LogTextView: NSViewRepresentable {
     let lines: [Runner.LogLine]
 
@@ -296,7 +296,7 @@ struct LogTextView: NSViewRepresentable {
     final class Coordinator {
         var firstId: Int?
         var lastId: Int?
-        var lengths: [Int] = []          // délka každého řádku v textu (včetně \n)
+        var lengths: [Int] = []          // length of each line in the text (including \n)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -324,7 +324,7 @@ struct LogTextView: NSViewRepresentable {
         storage.beginEditing()
         if let first = c.firstId, let last = c.lastId, let newFirst = lines.first?.id,
            newFirst >= first, newFirst <= last + 1 {
-            let drop = min(newFirst - first, c.lengths.count)      // řádky, které Runner zepředu oříznul
+            let drop = min(newFirst - first, c.lengths.count)      // lines that Runner trimmed from the front
             if drop > 0 {
                 storage.deleteCharacters(in: NSRange(location: 0, length: c.lengths.prefix(drop).reduce(0, +)))
                 c.lengths.removeFirst(drop)
@@ -351,7 +351,7 @@ struct LogTextView: NSViewRepresentable {
     }
 
     private static func color(for text: String) -> NSColor {
-        // výpis bota je česky, nebo anglicky (podle jazyka aplikace)
+        // the bot's log is in Czech or English (it follows the app's language)
         if text.contains("!!") || text.contains("✖") || text.contains("POZOR") || text.contains("WARNING")
             || text.contains("s chybou") { return red }
         if text.contains("✔") { return green }

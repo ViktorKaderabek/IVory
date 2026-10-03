@@ -1,26 +1,26 @@
 import Foundation
 import Observation
 
-/// Jazyk aplikace i výpisu bota: čeština, nebo angličtina (výchozí podle systému). Ukládá se v config.json
-/// („language“), takže ho čte i bot.
+/// Language of the app and of the bot's log: Czech or English (the default follows the system). Stored in
+/// config.json ("language"), so the bot reads it too.
 enum AppLanguage: String, Codable, CaseIterable, Identifiable {
-    case cs, en   // pořadí v přepínači: Čeština / English
+    case cs, en   // order in the picker: Czech, then English
 
     var id: String { rawValue }
 
-    /// Výchozí jazyk podle systému: čeština, když je první v Nastavení systému → Jazyk a oblast.
+    /// Default language from the system: Czech when it is first in System Settings → Language & Region.
     static var system: AppLanguage {
         Locale.preferredLanguages.first?.hasPrefix("cs") == true ? .cs : .en
     }
 
-    /// Název jazyka v něm samém (přepínač v nastavení).
+    /// The language's name in that language (the picker in settings).
     var title: String { self == .en ? "English" : "Čeština" }
 }
 
 enum L10n {
-    /// Aktuální jazyk – nastavuje ho ConfigStore při načtení a při každé změně nastavení.
-    /// Je sledovaný (Observation): pohled, který při vykreslení zavolá `tr()`, se po změně jazyka sám
-    /// překreslí. Okno se proto při přepnutí jazyka nemusí celé stavět znovu (to trvalo ~300 ms).
+    /// Current language, set by ConfigStore on load and on every settings change.
+    /// It is observed (Observation): a view that calls `tr()` while rendering redraws itself when the
+    /// language changes, so switching the language does not rebuild the whole window (that took ~300 ms).
     static var lang: AppLanguage {
         get { current.lang }
         set { if current.lang != newValue { current.lang = newValue } }
@@ -36,12 +36,12 @@ enum L10n {
     private static let current = Current()
 }
 
-/// Text v aktuálním jazyce: `tr("Spustit", "Start")`.
+/// Text in the current language: `tr("Spustit", "Start")`.
 func tr(_ cs: String, _ en: String) -> String {
     L10n.lang == .cs ? cs : en
 }
 
-/// Počet s podstatným jménem: čeština má tři tvary (1 kus, 2 kusy, 5 kusů), angličtina dva.
+/// A count with a noun: Czech has three forms (for 1, for 2–4 and for the rest), English two.
 func trCount(_ n: Int, cs one: String, _ few: String, _ many: String, en enOne: String, _ enMany: String) -> String {
     if L10n.lang == .en {
         return "\(n) \(n == 1 ? enOne : enMany)"
@@ -49,9 +49,9 @@ func trCount(_ n: Int, cs one: String, _ few: String, _ many: String, en enOne: 
     return "\(n) \(n == 1 ? one : (2...4).contains(n) ? few : many)"
 }
 
-/// Procenta: česky s mezerou („85 %“), anglicky bez („85%“).
+/// Percent: Czech with a space ("85 %"), English without ("85%").
 func percentText(_ n: Int) -> String { tr("\(n) %", "\(n)%") }
 
-/// Rozsah procent („85–100 %“ / „85–100%“); stejné meze = jedno číslo.
+/// Percent range ("85–100 %" / "85–100%"); equal bounds give a single number.
 func pctRange(_ lo: Int, _ hi: Int) -> String { lo == hi ? percentText(lo) : tr("\(lo)–\(hi) %", "\(lo)–\(hi)%") }
 

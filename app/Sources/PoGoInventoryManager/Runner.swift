@@ -1,13 +1,13 @@
 import AppKit
 import Foundation
 
-/// Spouští scripts/run.sh (Appium + bot), sbírá jeho výpis a z událostí bota (řádky „@@{json}“)
-/// počítá přehled: fáze, dlaždice, panel tagů a co se právě děje.
+/// Runs scripts/run.sh (Appium + bot), collects its output and, from the bot's events ("@@{json}" lines),
+/// computes the overview: phases, tiles, tags panel and what is happening right now.
 @MainActor
 final class Runner: ObservableObject {
     static let shared = Runner()
 
-    /// Krok běhu (karty se zaškrtávátky, pořadí je pevné).
+    /// A step of the run (cards with checkboxes; the order is fixed).
     enum Step: Int, CaseIterable, Identifiable {
         case duplicates = 1, iv, pvp, rename
 
@@ -22,7 +22,7 @@ final class Runner: ObservableObject {
             }
         }
 
-        /// Název fáze v ukazateli postupu.
+        /// Phase name in the progress indicator.
         var phaseTitle: String { self == .rename ? tr("Přejmenování", "Renaming") : title }
 
         var symbol: String {
@@ -55,7 +55,7 @@ final class Runner: ObservableObject {
 
     enum Outcome { case done, stopped, failed }
 
-    /// Přehled spočítaný z událostí (a u starších řádků z textu) bota.
+    /// Overview computed from the bot's events (and, for older lines, from its text output).
     struct Stats {
         var measured = 0
         var removable = 0
@@ -64,7 +64,7 @@ final class Runner: ObservableObject {
         var renamed = 0
         var skipped = 0
         var errors = 0
-        var phase = 0          // 0 = příprava, 1 = duplicity, 2 = IV tagy, 3 = PvP tagy, 4 = přejmenování
+        var phase = 0          // 0 = preparation, 1 = duplicates, 2 = IV tags, 3 = PvP tags, 4 = renaming
     }
 
     struct LogLine: Identifiable {
@@ -77,18 +77,18 @@ final class Runner: ObservableObject {
     @Published private(set) var status = ""
     @Published private(set) var outcome: Outcome?
     @Published private(set) var stats = Stats()
-    /// Jak daleko je právě běžící fáze (0–1), když to bot hlásí (čtení IV: „scan“ s n/total); jinak nil.
+    /// Progress of the current phase (0–1) when the bot reports it (IV reading: "scan" with n/total); otherwise nil.
     @Published private(set) var phaseProgress: Double?
     @Published private(set) var activity = ""
     @Published private(set) var startedAt: Date?
     @Published private(set) var finishedAt: Date?
     @Published private(set) var steps = Steps()
     @Published private(set) var exitCode: Int32 = 0
-    /// Panel „Tagy v inventáři“: tag → počet kusů, velikost inventáře a poslední změna (svítí +N).
+    /// "Tags in your storage" panel: tag → Pokémon count, storage size and the last change (lights up with +N).
     @Published private(set) var tagCounts: [String: Int] = [:]
     @Published private(set) var boxTotal = 0
     @Published private(set) var lastTagChange: (tag: String, delta: Int)?
-    /// Hláška, se kterou bot skončil (srozumitelná věta pro hero kartu).
+    /// The message the bot ended with (a plain sentence for the hero card).
     @Published private(set) var fatalText: String?
 
     private var process: Process?
@@ -161,7 +161,7 @@ final class Runner: ObservableObject {
         append("▶ Start: \(names)" + (fresh ? tr(" · IV změřit znovu", " · measure IV again") : ""))
     }
 
-    /// Stop = jako Ctrl+C: bot dokončí krok, uloží výsledky a skončí.
+    /// Stop = like Ctrl+C: the bot finishes the current step, saves the results and exits.
     func stop() {
         guard let process, process.isRunning else { return }
         status = tr("Zastavuji…", "Stopping…")
@@ -169,7 +169,7 @@ final class Runner: ObservableObject {
         process.interrupt()
     }
 
-    /// Při zavírání aplikace: přerušit a chvilku počkat, pak natvrdo ukončit.
+    /// When the app quits: interrupt, wait a moment, then terminate it outright.
     func terminateNow() {
         guard let process, process.isRunning else { return }
         process.interrupt()
@@ -215,7 +215,7 @@ final class Runner: ObservableObject {
         parseText(line)
     }
 
-    // MARK: - Události bota
+    // MARK: - Bot events
 
     private func handleEvent(_ json: Substring) {
         guard let data = json.data(using: .utf8),
@@ -247,7 +247,7 @@ final class Runner: ObservableObject {
                 flash(tag, delta)
             }
         case "tagged":
-            // u duplicit (inventář ještě není celý přečtený) počítat kusy s tagem přímo
+            // during duplicates (the storage hasn't been fully read yet) count the tagged Pokémon directly
             if let tag = e["tag"] as? String, let items = e["items"] as? [Any], e["remove"] as? Bool != true,
                stats.phase <= 1 {
                 tagCounts[tag, default: 0] += items.count
@@ -285,7 +285,7 @@ final class Runner: ObservableObject {
         }
     }
 
-    /// Tag, do kterého právě přibyly kusy, krátce svítí.
+    /// A tag that just gained Pokémon lights up briefly.
     private func flash(_ tag: String, _ delta: Int) {
         lastTagChange = (tag, delta)
         changeTask?.cancel()
@@ -296,7 +296,7 @@ final class Runner: ObservableObject {
         }
     }
 
-    /// Textové řádky (pomalý režim, run.sh) – jen to, co události nepokrývají.
+    /// Plain text lines (slow mode, run.sh) – only what the events don't cover.
     private func parseText(_ line: String) {
         let t = line.trimmingCharacters(in: .whitespaces)
         if t.isEmpty { return }
@@ -306,7 +306,7 @@ final class Runner: ObservableObject {
     }
 
     #if DEBUG
-    /// Jen pro kontrolu vzhledu: `IVORY_PREVIEW=running|done|stopped|error` naplní ukázková data jako v návrhu.
+    /// Only for checking the look: `IVORY_PREVIEW=running|done|stopped|error` fills in sample data as in the design.
     func applyPreview(_ state: String) {
         let sample: [String] = [
             tr("Hledání ve hře: count & !legendary & !ultra beasts", "Search in the game: count & !legendary & !ultra beasts"),
@@ -385,7 +385,6 @@ final class Runner: ObservableObject {
             status = tr("Skončilo s chybou", "Failed")
             outcome = .failed
             activity = fatalText ?? tr("Skončilo s chybou (\(code)) – podívej se do výpisu", "Failed (\(code)) – check the log")
-
         }
         append("■ \(status)")
     }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Vytvoří core/pokedata.json: staty všech druhů, typy, evoluční řady a násobitele úrovní (CPM).
+"""Builds core/pokedata.json: stats of all species, types, evolution lines and level multipliers (CPM).
 
-Zdroje (veřejná data, stahuje se jen tady – aplikace pak nic nestahuje):
-  - PvPoke gamemaster (druhy, formy, staty, evoluce)  https://github.com/pvpoke/pvpoke
-  - PokeMiners game master (násobitele CP podle úrovně) https://github.com/PokeMiners/game_masters
+Sources (public data, downloaded only here; the app itself never downloads game data):
+  - PvPoke gamemaster (species, forms, stats, evolutions)  https://github.com/pvpoke/pvpoke
+  - PokeMiners game master (CP multipliers by level)       https://github.com/PokeMiners/game_masters
 
   python3 scripts/build_pokedata.py
 """
@@ -29,7 +29,7 @@ def main():
     for p in gm["pokemon"]:
         sid = p["speciesId"]
         tags = set(p.get("tags") or [])
-        # stínové a mega formy mají stejné staty / jsou jen dočasné – pro výpočty stačí základní forma
+        # shadow forms have the same stats, mega forms are only temporary: the base form is enough for the math
         if "shadow" in tags or "mega" in tags or sid.endswith("_shadow") or not p.get("released", True):
             continue
         fam = p.get("family") or {}
@@ -43,7 +43,7 @@ def main():
             "evolutions": fam.get("evolutions") or [],
             "tags": sorted(tags & KEEP_TAGS),
         }
-    # evoluce, které vedou na vyřazené formy, vynechat
+    # drop evolutions that lead to excluded forms
     for sp in species.values():
         sp["evolutions"] = [e for e in sp["evolutions"] if e in species]
         if sp["parent"] not in species:

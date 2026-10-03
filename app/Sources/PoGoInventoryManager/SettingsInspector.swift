@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Nastavení vysunuté zprava: to podstatné nahoře, zbytek pod „Pokročilé“, stav ukládání v patičce.
+/// Settings panel that slides in from the right: the essentials on top, the rest under "Advanced",
+/// save status in the footer.
 struct SettingsInspector: View {
     var body: some View {
         VStack(spacing: 0) {
@@ -78,7 +79,7 @@ struct SettingsContent: View {
         .onChange(of: runner.finishedAt) { _, _ in lastBox = LastBox.load() }
     }
 
-    // MARK: - Sbalitelné sekce
+    // MARK: - Collapsible sections
 
     private func isOpen(_ key: String) -> Bool { openRaw.split(separator: ",").contains(Substring(key)) }
 
@@ -131,7 +132,7 @@ struct SettingsContent: View {
         return store.config.udid.isEmpty ? tr("automaticky", "automatic") : tr("vybraný", "selected")
     }
 
-    // MARK: - Duplicity
+    // MARK: - Duplicates
 
     private var duplicates: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -170,7 +171,7 @@ struct SettingsContent: View {
         .padding(14)
     }
 
-    // MARK: - IV tagy
+    // MARK: - IV tags
 
     private var ivTags: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -226,7 +227,7 @@ struct SettingsContent: View {
         .padding(EdgeInsets(top: 8, leading: 8, bottom: 14, trailing: 8))
     }
 
-    // MARK: - PvP tagy
+    // MARK: - PvP tags
 
     private var pvpTags: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -264,13 +265,13 @@ struct SettingsContent: View {
         .padding(.horizontal, 4)
     }
 
-    // MARK: - Přejmenování
+    // MARK: - Renaming
 
     private var samples: [NameSample] {
         lastBox?.samples(in: store.config.rename.min...store.config.rename.max) ?? NameSample.design
     }
 
-    /// Nejmenší a největší součet IV, který spadne do rozsahu (procenta se zaokrouhlují).
+    /// The smallest and largest IV sum that falls into the range (percentages are rounded).
     private var sumRange: (Int, Int) {
         let r = store.config.rename
         let pct = { (s: Int) in Int((Double(s) / 45 * 100).rounded()) }
@@ -450,7 +451,7 @@ struct SettingsContent: View {
         .animation(.snappy, value: message)
     }
 
-    /// Najité iPhony jako nabídka, jinak ruční UDID.
+    /// Found iPhones as a menu, otherwise a manually entered UDID.
     @ViewBuilder private var deviceField: some View {
         if devices.isEmpty {
             FieldBox {
@@ -561,7 +562,7 @@ struct SettingsContent: View {
                     messageKind = .ok
                     message = tr("Team ID sedí s certifikátem.", "The Team ID matches the certificate.")
                 } else {
-                    // Současnou hodnotu nepřepisovat sám – když podepisování funguje, je správná.
+                    // Don't overwrite the current value automatically – if signing works, it's correct.
                     proposedTeam = team
                     messageKind = .warning
                     message = tr("V certifikátu je \(team). Když ti podepisování funguje se současnou hodnotou, nech ji být.",
@@ -576,7 +577,7 @@ struct SettingsContent: View {
         }
     }
 
-    // MARK: - Pokročilé
+    // MARK: - Advanced
 
     private var advanced: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -608,9 +609,10 @@ struct SettingsContent: View {
     }
 }
 
-// MARK: - Komponenty
+// MARK: - Components
 
-/// Rozbalení sekce: karta se odkrývá shora dolů (výška roste od nuly), sekce pod ní plynule sjíždějí.
+/// Expanding a section: the card is revealed top to bottom (its height grows from zero)
+/// and the sections below slide down smoothly.
 extension AnyTransition {
     static var reveal: AnyTransition {
         .modifier(active: Reveal(progress: 0), identity: Reveal(progress: 1))
@@ -627,7 +629,7 @@ private struct Reveal: ViewModifier {
     }
 }
 
-/// Nahlásí jen `progress` z výšky obsahu a obsah přišpendlí nahoru (zbytek ořízne `clipped`).
+/// Reports only `progress` of the content's height and pins the content to the top (`clipped` cuts off the rest).
 private struct RevealLayout: Layout {
     var progress: CGFloat
     var animatableData: CGFloat {
@@ -637,7 +639,7 @@ private struct RevealLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let child = subviews.first else { return .zero }
-        // rozbaleno: jen průchod (stejný návrh velikosti = SwiftUI si změřené pamatuje, nic navíc)
+        // expanded: just pass through (same size proposal = SwiftUI reuses its cached measurement, no extra work)
         if progress >= 1 { return child.sizeThatFits(proposal) }
         let size = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
         return CGSize(width: size.width, height: size.height * progress)
@@ -654,44 +656,7 @@ private struct RevealLayout: Layout {
                            subviews: Subviews, cache: inout ()) -> CGFloat? { nil }
 }
 
-/// Sekce nastavení: ikona a nadpis, pod nimi karta.
-struct SettingsSection<Content: View>: View {
-    let title: String
-    let symbol: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                SoftIcon(symbol: symbol, size: 26, radius: 8)
-                Text(title).font(.system(size: 15, weight: .semibold))
-            }
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
-        }
-    }
-}
-
-struct LabeledField: View {
-    let label: String
-    let hint: String
-    @Binding var text: String
-    var footnote: String? = nil
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 13, weight: .medium))
-            FieldBox { TextField(hint, text: $text) }
-            if let footnote {
-                Text(footnote).font(.system(size: 12)).foregroundStyle(Theme.muted)
-            }
-        }
-    }
-}
-
-/// −  číslo  +
+/// −  number  +
 struct PlusMinus: View {
     @Binding var value: Int
     let range: ClosedRange<Int>
@@ -728,7 +693,7 @@ struct PlusMinus: View {
     }
 }
 
-/// Řádek IV tagu: barevná tečka, název (upravitelný), rozsah, hranice „od X %“, šipky, smazat.
+/// IV tag row: color dot, name (editable), range, the "from X%" threshold, arrows, delete.
 struct TagRow: View {
     @Binding var tag: IVTag
     let range: ClosedRange<Int>
@@ -770,7 +735,7 @@ struct TagRow: View {
     }
 }
 
-/// Patička panelu: stav ukládání a cesta k souboru.
+/// Panel footer: save status and the file path.
 struct SaveFooter: View {
     @EnvironmentObject private var store: ConfigStore
 

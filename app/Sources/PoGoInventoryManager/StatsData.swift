@@ -1,7 +1,7 @@
 import Foundation
 
-/// Statistiky spočítané naposledy. Načtou se při spuštění a po každém běhu, takže obrazovka
-/// Statistiky se při přepnutí ukáže hned (nic se nepočítá, ani se karty nepřeskládávají dvakrát).
+/// The most recently computed stats. They load at launch and after every run, so the Stats
+/// screen appears immediately when you switch to it (nothing is computed and the cards aren't laid out twice).
 @MainActor
 final class StatsStore: ObservableObject {
     static let shared = StatsStore()
@@ -19,9 +19,9 @@ final class StatsStore: ObservableObject {
     }
 }
 
-/// Statistiky obrazovky „Co IVory zná“. Počítají se jen tady na Macu z toho, co bot uložil:
-/// paměť (~/.pogo/pamet.json), poslední přečtený box (~/.pogo/last_box.json), data druhů
-/// (core/pokedata.json v aplikaci) a složky běhů (~/Desktop/pogo_runs). Nic se nestahuje.
+/// Stats for the "What IVory knows" screen. Computed only here on the Mac from what the bot saved:
+/// the memory (~/.pogo/pamet.json), the storage as of the last read (~/.pogo/last_box.json), species
+/// data (core/pokedata.json in the app) and the run folders (~/Desktop/pogo_runs). Nothing is downloaded.
 struct InventoryStats {
     struct Named: Identifiable {
         let name: String
@@ -31,55 +31,55 @@ struct InventoryStats {
 
     struct League: Identifiable {
         let key: String          // great / ultra / master
-        let top: [String]        // druhy s pořadím 1
+        let top: [String]        // species with rank 1
         var id: String { key }
     }
 
     struct Run: Identifiable {
-        let id: String           // název složky
+        let id: String           // folder name
         let date: Date
         let duration: TimeInterval
-        let checked: Int?        // „Prošlo: N“ ze shrnutí (u běhů, které ho vypsaly)
-        let errors: Int          // složky chyba_* = vyřešené chyby
+        let checked: Int?        // "Checked: N" from the summary (for runs that printed it)
+        let errors: Int          // chyba_* folders = recovered errors
     }
 
-    var total = 0                // kusů s IV v paměti
-    var withSpecies = 0          // z nich se známým druhem
+    var total = 0                // entries with IVs in the memory
+    var withSpecies = 0          // of those, entries with a known species
 
     var dexOwned = 0
     var dexTotal = 0
-    var generations = Array(repeating: 0, count: 9)   // různé druhy podle generace (1.–9.)
+    var generations = Array(repeating: 0, count: 9)   // distinct species per generation (1st–9th)
 
     var ivAverage = 0
-    var ivBins: [(lower: Int, count: Int)] = []    // 90–100, 80–89, 70–79, pod 70
-    var hundos: [String] = []    // druh (nebo přezdívka, když druh neznáme)
-    var nearPerfect = 0          // 98 % a víc
+    var ivBins: [(lower: Int, count: Int)] = []    // 90–100, 80–89, 70–79, under 70
+    var hundos: [String] = []    // species (or the nickname when the species is unknown)
+    var nearPerfect = 0          // 98% or more
 
     var leagues: [League] = []
-    var ranked = 0               // kusů s pořadím v ligách
+    var ranked = 0               // entries with a league rank
 
     var topCP = 0
-    var maxCP: [Named] = []      // teoretické CP na L50, nejsilnější druhy
+    var maxCP: [Named] = []      // theoretical CP at L50, strongest species
 
     var legendary = 0
     var ultraBeast = 0
     var mythical = 0
     var canEvolve = 0
     var duplicateSpecies = 0
-    var removable = 0            // kusů s tagem pro mazání
+    var removable = 0            // entries with the removal tag
 
-    var types: [Named] = []      // všechny typy od nejčastějšího
+    var types: [Named] = []      // all types, most common first
     var typed = 0
     var topSpecies: [Named] = []
     var levels: [(label: String, count: Int)] = []
     var leveled = 0
-    var tags: [Named] = []       // tagy ve hře od nejčastějšího
+    var tags: [Named] = []       // in-game tags, most common first
 
-    var runs: [Run] = []         // od nejstaršího
+    var runs: [Run] = []         // oldest first
 
     var isEmpty: Bool { total == 0 }
 
-    // MARK: - Načtení
+    // MARK: - Loading
 
     static func load(removeTag: String) -> InventoryStats {
         var s = InventoryStats()
@@ -92,7 +92,7 @@ struct InventoryStats {
         s.total = box.count
         guard !box.isEmpty else { return s }
 
-        // druh
+        // species
         let known = box.compactMap { item in item.sid.flatMap { species[$0] }.map { (item, $0) } }
         s.withSpecies = known.count
         let dexes = Set(known.map(\.1.dex))
@@ -123,7 +123,7 @@ struct InventoryStats {
             .map { item in item.sid.flatMap { species[$0]?.name } ?? item.name ?? "?" }
         s.nearPerfect = pcts.filter { $0 >= 98 }.count
 
-        // síla, typy, úrovně, tagy
+        // strength, types, levels, tags
         s.topCP = box.compactMap(\.cp).max() ?? 0
         var typeCount: [String: Int] = [:]
         for item in box {
@@ -143,7 +143,7 @@ struct InventoryStats {
         s.tags = tagCount.map { Named(name: $0.key, count: $0.value) }.sorted { $0.count > $1.count }
         s.removable = tagCount[removeTag] ?? 0
 
-        // PvP pořadí a max. CP z posledního přečteného boxu
+        // PvP ranks and max CP from the storage as of the last read
         if let last = decode(LastBoxFile.self, home.appendingPathComponent(".pogo/last_box.json")) {
             let values = last.items.compactMap(\.values)
             s.ranked = values.filter { $0["great"] != nil || $0["ultra"] != nil || $0["master"] != nil }.count
@@ -161,7 +161,7 @@ struct InventoryStats {
         return s
     }
 
-    // MARK: - Pomocné
+    // MARK: - Helpers
 
     static func pct(_ iv: [Int]) -> Int { Int((Double(iv.reduce(0, +)) / 45 * 100).rounded()) }
 
@@ -180,7 +180,7 @@ struct InventoryStats {
         return try? JSONDecoder().decode(type, from: data)
     }
 
-    /// core/pokedata.json: v aplikaci v Resources/core, při vývoji vedle zdrojáků.
+    /// core/pokedata.json: in Resources/core inside the app, next to the sources during development.
     private static func loadSpecies() -> PokeData? {
         if let url = Bundle.main.url(forResource: "pokedata", withExtension: "json", subdirectory: "core"),
            let data = decode(PokeData.self, url) {
@@ -195,7 +195,7 @@ struct InventoryStats {
         #endif
     }
 
-    /// Běhy ze složek pogo_runs (název = začátek běhu), délka z časů v log.txt.
+    /// Runs from the folders in pogo_runs (folder name = run start), duration from the timestamps in log.txt.
     private static func loadRuns(_ root: URL) -> [Run] {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: root.path) else { return [] }
@@ -223,14 +223,14 @@ struct InventoryStats {
         }
     }
 
-    /// „HH:mm:ss …“ na začátku řádku výpisu → sekundy od půlnoci.
+    /// "HH:mm:ss …" at the start of a log line → seconds since midnight.
     private static func seconds(of line: Substring) -> TimeInterval? {
         let p = line.prefix(8).split(separator: ":")
         guard line.count >= 8, p.count == 3, let h = Int(p[0]), let m = Int(p[1]), let s = Int(p[2]) else { return nil }
         return TimeInterval(h * 3600 + m * 60 + s)
     }
 
-    // MARK: - Soubory
+    // MARK: - Files
 
     private struct Memory: Decodable {
         struct Item: Decodable {

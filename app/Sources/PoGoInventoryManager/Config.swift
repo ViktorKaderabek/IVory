@@ -1,6 +1,6 @@
 import Foundation
 
-/// 8 barev tagů, které hra nabízí (pořadí jako ve hře).
+/// The 8 tag colors the game offers (in the game's order).
 enum TagColor: String, Codable, CaseIterable, Identifiable {
     case blue, green, purple, yellow, red, orange, gray, black
 
@@ -20,7 +20,7 @@ enum TagColor: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-/// Jeden IV tag: od kolika procent IV se kus do tagu zařadí a jakou barvu tag ve hře dostane.
+/// One IV tag: the IV percentage from which a Pokémon goes into the tag, and the tag's color in the game.
 struct IVTag: Codable, Identifiable, Hashable {
     var id = UUID()
     var min: Int
@@ -43,14 +43,14 @@ struct IVTag: Codable, Identifiable, Hashable {
     }
 }
 
-/// Které kroky běh udělá. Pořadí je vždy Duplicity → IV tagy → PvP tagy → Přejmenování.
+/// Which steps a run does. The order is always duplicates → IV tags → PvP tags → renaming.
 struct Steps: Codable, Equatable {
     var duplicates = true
     var iv = true
     var pvp = false
     var rename = false
 
-    /// Pro bota: --steps duplicates,iv,pvp,rename
+    /// For the bot: --steps duplicates,iv,pvp,rename
     var argument: String {
         [("duplicates", duplicates), ("iv", iv), ("pvp", pvp), ("rename", rename)]
             .filter(\.1).map(\.0).joined(separator: ",")
@@ -59,7 +59,7 @@ struct Steps: Codable, Equatable {
     var count: Int { [duplicates, iv, pvp, rename].filter { $0 }.count }
 }
 
-/// PvP liga: tag dostane kus s pořadím IV do maxRank.
+/// PvP league: a Pokémon whose IV rank is within maxRank gets the tag.
 struct League: Codable, Equatable {
     var name: String
     var enabled = true
@@ -99,8 +99,8 @@ struct PvPConfig: Codable, Equatable {
     enum CodingKeys: String, CodingKey { case great, ultra, master }
 }
 
-/// Dílek šablony jména: k = druh dílku (iv, ivs, lvl, species, short, evo, cpEvo, cpMax,
-/// great, ultra, master, text, space, dash, pipe), v = vlastní text.
+/// A piece of the name template: k = kind of piece (iv, ivs, lvl, species, short, evo, cpEvo, cpMax,
+/// great, ultra, master, text, space, dash, pipe), v = custom text.
 struct NameToken: Codable, Equatable, Identifiable, Hashable {
     var id = UUID()
     var k: String
@@ -154,7 +154,7 @@ struct RenameConfig: Codable, Equatable {
         onlyTag = try c.decodeIfPresent(String.self, forKey: .onlyTag) ?? d.onlyTag
     }
 
-    /// Pro bota: jen když je přepínač zapnutý.
+    /// For the bot: only_tag stays empty unless the toggle is on.
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(min, forKey: .min)
@@ -167,7 +167,7 @@ struct RenameConfig: Codable, Equatable {
     }
 }
 
-/// Nastavení bota. Ukládá se do ~/.pogo/config.json, odkud ho čte core/pogo_bot.py.
+/// Bot settings. Saved to ~/.pogo/config.json, which runner.load_config (core/ivory/runner.py) reads.
 struct AppConfig: Codable, Equatable {
     var udid = ""
     var teamId = ""
@@ -182,18 +182,18 @@ struct AppConfig: Codable, Equatable {
     var pvp = PvPConfig()
     var rename = RenameConfig()
     var language = AppLanguage.system
-    /// Kontrolovat aktualizace při spuštění a jednou za 24 hodin (Updater.swift).
+    /// Check for updates at launch and once every 24 hours (Updater.swift).
     var checkUpdates = true
-    /// Souhlas s upozorněním na rizika (okno při prvním spuštění, viz Consent.swift): verze textu,
-    /// kdy a ve které verzi aplikace. Stejná pole zapisuje i scripts/run.sh po potvrzení v Terminálu.
+    /// Consent to the risk notice (the window on first launch, see Consent.swift): text version,
+    /// when, and in which app version. scripts/run.sh writes the same fields after confirmation in Terminal.
     var consentVersion = 0
     var consentAt = ""
     var consentAppVersion = ""
 
-    /// Co bot napíše do pole Search v inventáři (kusy, mezi kterými hledá duplicity).
+    /// What the bot types into the storage Search field (the Pokémon it looks for duplicates among).
     static let defaultSearchQuery = "count & !legendary & !ultra beasts"
 
-    /// IV tagy od nejlepšího: žlutá, oranžová, fialová, modrá, zelená, šedá, černá.
+    /// IV tags from the best: yellow, orange, purple, blue, green, gray, black.
     static let defaultIVTags = [
         IVTag(min: 100, name: "100% Perfect", color: .yellow),
         IVTag(min: 95, name: "95-99% Insane", color: .orange),
@@ -209,7 +209,7 @@ struct AppConfig: Codable, Equatable {
         return defaultIVTags.first(where: { min >= $0.min })?.color ?? .gray
     }
 
-    /// Všechny tagy, které bot používá (pro panel tagů a výběr „Jen kusy s tagem“).
+    /// Every tag the bot uses (the choices in the "Only Pokémon with a tag" menu).
     var allTagNames: [String] {
         [removeTag] + ivTags.sorted { $0.min > $1.min }.map(\.name).filter { !$0.isEmpty } + pvp.all.map(\.league.name)
     }
@@ -233,7 +233,7 @@ struct AppConfig: Codable, Equatable {
 
     init() {}
 
-    /// Tolerantní načtení: co v souboru chybí, zůstane výchozí.
+    /// Lenient decoding: anything missing from the file keeps its default.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AppConfig()
@@ -281,7 +281,8 @@ final class ConfigStore: ObservableObject {
         L10n.lang = config.language
     }
 
-    /// Obchod pro aplikaci. V ladicím náhledu (IVORY_PREVIEW) a při focení (IVORY_SHOTS) se nic neukládá.
+    /// The ConfigStore the app starts with. Nothing is saved in the debug preview (IVORY_PREVIEW) or while
+    /// taking screenshots (IVORY_SHOTS).
     static func launch() -> ConfigStore {
         #if DEBUG
         let env = ProcessInfo.processInfo.environment
@@ -300,7 +301,7 @@ final class ConfigStore: ObservableObject {
         return (try? JSONDecoder().decode(AppConfig.self, from: data)) ?? AppConfig()
     }
 
-    /// Ukládá se samo chvilku po každé změně.
+    /// Saves automatically shortly after every change.
     private func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in

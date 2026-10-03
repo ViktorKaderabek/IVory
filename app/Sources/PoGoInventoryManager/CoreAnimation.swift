@@ -2,13 +2,13 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-// Nekonečné animace hero karty běží v Core Animation: přehrává je systém (render server), takže
-// aplikace mezi snímky nic nepočítá. Dřív je kreslil SwiftUI TimelineView a každý snímek
-// (až 120× za sekundu) procházel celé okno na hlavním vlákně – UI se pak sekalo.
+// The hero card's endless animations run in Core Animation: the system plays them (render server), so
+// the app computes nothing between frames. They used to be drawn by a SwiftUI TimelineView, and every frame
+// (up to 120 per second) walked the whole window on the main thread, which made the UI stutter.
 
-// MARK: - Plující světla
+// MARK: - Drifting lights
 
-/// Tři rozostřená světla na pozadí hero karty. `speed` 1 = jeden přelet za 16 s; 0 = stojí.
+/// Three blurred lights behind the hero card. `speed` 1 = one pass in 16 s; 0 = standing still.
 struct HeroLights: NSViewRepresentable {
     let colors: [Color]
     let opacity: Double
@@ -23,14 +23,14 @@ struct HeroLights: NSViewRepresentable {
     }
 
     final class LightsView: NSView {
-        /// Velikost, poloha (zlomek šířky/výšky karty), dva klíčové snímky (posun x, y, zvětšení)
-        /// a jak pomalu světlo pluje (×). Hodnoty z návrhu.
+        /// Size, position (fraction of the card's width/height), two keyframes (x, y offset, scale)
+        /// and how slowly the light drifts (×). Values from the design.
         private static let specs: [(size: CGFloat, left: CGFloat, top: CGFloat, keys: [(CGFloat, CGFloat, CGFloat)], slow: Double)] = [
             (340, -0.08, 0.35, [(70, 24, 1.18), (-30, 40, 0.94)], 1),
             (380, 0.32, -0.45, [(-80, 30, 0.9), (-20, -30, 1.15)], 1.2),
             (360, 0.68, 0.10, [(40, -40, 1.2), (-60, 10, 1)], 0.9),
         ]
-        /// Jak moc je okraj světla rozmazaný (odpovídá `.blur(radius: 56)` z návrhu).
+        /// How blurred the light's edge is (matches `.blur(radius: 56)` in the design).
         private static let soft: CGFloat = 56
 
         private let stage = CALayer()
@@ -100,7 +100,7 @@ struct HeroLights: NSViewRepresentable {
             setSpeed(speed)
         }
 
-        /// Změna rychlosti bez skoku: místní čas vrstvy zůstane, jen poběží jinak rychle.
+        /// Changes the speed without a jump: the layer keeps its local time and just runs at a different rate.
         private func setSpeed(_ speed: Float) {
             guard stage.speed != speed else { return }
             let now = CACurrentMediaTime()
@@ -110,8 +110,8 @@ struct HeroLights: NSViewRepresentable {
             stage.beginTime = now
         }
 
-        /// Průběh jasu kruhu o poloměru `r` rozmazaného Gaussem (σ = soft): zastávky radiálního
-        /// přechodu od středu do vzdálenosti r + 2σ (kraj vrstvy).
+        /// Brightness profile of a circle of radius `r` with a Gaussian blur (σ = soft): stops of a radial
+        /// gradient from the center out to a distance of r + 2σ (the layer's edge).
         private static func stops(radius r: CGFloat) -> [(CGFloat, CGFloat)] {
             let end = r + 2 * soft
             return stride(from: 0.0, through: 1.0, by: 0.1).map { f in
@@ -122,9 +122,9 @@ struct HeroLights: NSViewRepresentable {
     }
 }
 
-// MARK: - Kruhy kolem tlačítka Spustit
+// MARK: - Rings around the Start button
 
-/// V klidu jeden kruh, který se pomalu rozplývá ven; při běhu dvě radarové vlny a točící se oblouk.
+/// When idle, one ring that slowly fades outward; during a run, two radar ripples and a spinning arc.
 struct StartRings: NSViewRepresentable {
     let running: Bool
     let reduceMotion: Bool
@@ -184,7 +184,7 @@ struct StartRings: NSViewRepresentable {
             }
         }
 
-        /// Kruh vepsaný do pohledu (jako SwiftUI `strokeBorder`), škáluje se od středu.
+        /// A ring inscribed in the view (like SwiftUI `strokeBorder`), scaled from the center.
         private func ring(width: CGFloat, color: NSColor) -> CAShapeLayer {
             let shape = CAShapeLayer()
             shape.frame = bounds
@@ -195,7 +195,7 @@ struct StartRings: NSViewRepresentable {
             return shape
         }
 
-        /// Kruh se zvětší a zároveň vybledne (ease-out), pořád dokola.
+        /// The ring grows and fades out at the same time (ease-out), over and over.
         private func pulse(from: CGFloat, to: CGFloat, opacity: Float, duration: Double, delay: Double) -> CAAnimation {
             let scale = CABasicAnimation(keyPath: "transform.scale")
             scale.fromValue = from
@@ -213,7 +213,7 @@ struct StartRings: NSViewRepresentable {
             return group
         }
 
-        /// Oblouk s přechodem do bílé, otočka za 1,6 s.
+        /// An arc with a gradient into white, one turn every 1.6 s.
         private func spinner(reduceMotion: Bool) -> CALayer {
             let arc = CAGradientLayer()
             arc.frame = bounds
@@ -240,17 +240,17 @@ struct StartRings: NSViewRepresentable {
     }
 }
 
-// MARK: - Pulzování
+// MARK: - Pulsing
 
-/// Kroužek, který pulzuje: volitelně výplň, záře kolem (stín) a blikání. Nahrazuje `phaseAnimator`,
-/// který by po celou dobu běhu překresloval okno.
+/// A pulsing circle: optional fill, a glow around it (shadow) and blinking. Replaces `phaseAnimator`,
+/// which would redraw the window for the whole run.
 struct PulsingCircle: NSViewRepresentable {
     var fill: Color? = nil
     var glow: Color? = nil
     var glowRadius: CGFloat = 5
-    /// Záře mezi dvěma sílami (0–1), tam a zpět.
+    /// Glow between two strengths (0–1), back and forth.
     var glowRange: ClosedRange<Float> = 1...1
-    /// Celý kroužek bliká mezi plnou a touto průhledností.
+    /// The whole circle blinks between full opacity and this opacity.
     var blinkTo: Float = 1
     var duration: Double = 1
     var animate = true
@@ -317,9 +317,9 @@ struct PulsingCircle: NSViewRepresentable {
     }
 }
 
-// MARK: - Světlo na spojnici fází
+// MARK: - Light on the phase connector
 
-/// Krátký světlý pruh, který pořád dokola přejíždí zleva doprava (na spojnici za běžící fází).
+/// A short bright stripe that sweeps from left to right over and over (on the connector after the running phase).
 struct FlowStripe: NSViewRepresentable {
     let reduceMotion: Bool
 

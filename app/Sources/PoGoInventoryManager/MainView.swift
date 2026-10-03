@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Jediná obrazovka aplikace: hero karta s tlačítkem, režim, fáze, dlaždice a (sbalený) výpis.
-/// Nastavení vyjíždí zprava (tlačítko Nastavení v liště).
+/// The app's main window: the Overview and Stats screens (switched in the toolbar) and the consent overlay.
+/// The settings slide in from the right (Settings button in the toolbar).
 struct MainView: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
@@ -10,11 +10,11 @@ struct MainView: View {
     @AppStorage("settingsWidth") private var settingsWidth = 400.0
     @State private var settingsOpen = false
     @State private var page = Page.overview
-    /// Statistiky se postaví jednou (chvíli po spuštění) a pak zůstanou, jen se skrývají.
+    /// Stats are built once (shortly after launch) and then kept; they are only hidden.
     @State private var statsBuilt = false
-    /// Panel je vysunutý (animuje se jen jeho posun).
+    /// The panel is slid out (only its offset is animated).
     @State private var panelShown = false
-    /// Během vysouvání panelu má hlavní obsah pevnou šířku, aby se v každém snímku nepřeskládával.
+    /// While the panel slides, the main content has a fixed width so it isn't re-laid out on every frame.
     @State private var frozenMainWidth: CGFloat?
     @State private var panelGeneration = 0
     @State private var minLocked = false
@@ -23,16 +23,15 @@ struct MainView: View {
     @State private var window = WindowRef()
     @State private var fresh = false
     @State private var confettiStart: Date?
-    /// Okno se souhlasem: rozhoduje se při spuštění (odvolání v Nastavení platí až od dalšího spuštění).
+    /// Consent window: decided at launch (revoking consent in Settings takes effect from the next launch).
     @State private var askConsent: Bool?
 
     private var showConsent: Bool { askConsent ?? !Consent.isGiven(store.config) }
 
-    /// Obrazovka v hlavní části okna (přepíná se v liště).
+    /// The screen in the main part of the window (switched in the toolbar).
     enum Page { case overview, stats }
 
-
-    /// Nejmenší šířka hlavního obsahu, pod kterou se karty mačkají.
+    /// Minimum width of the main content; below it the cards get squeezed.
     private static let mainMinWidth: CGFloat = 720
     private static let panelAnimation = 0.32
 
@@ -70,7 +69,7 @@ struct MainView: View {
         .onAppear {
             if askConsent == nil { askConsent = !Consent.isGiven(store.config) }
             Updater.shared.start { [store] in store.config.checkUpdates }
-            StatsStore.shared.refresh(removeTag: store.config.removeTag)   // ať jsou Statistiky hned připravené
+            StatsStore.shared.refresh(removeTag: store.config.removeTag)   // so Stats are ready right away
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { statsBuilt = true }
         }
         .onChange(of: runner.finishedAt) { _, _ in StatsStore.shared.refresh(removeTag: store.config.removeTag) }
@@ -103,8 +102,8 @@ struct MainView: View {
     }
 
     #if DEBUG
-    /// Kontrola vzhledu: IVORY_PREVIEW=stav, IVORY_SETTINGS=1, IVORY_STEPS=duplicates,iv,pvp,rename,
-    /// IVORY_CONFETTI=1. Screenshoty pro README: IVORY_SHOTS=složka (viz Shots.swift).
+    /// Appearance check: IVORY_PREVIEW=state, IVORY_SETTINGS=1, IVORY_STEPS=duplicates,iv,pvp,rename,
+    /// IVORY_PAGE=stats, IVORY_CONFETTI=1. README screenshots: IVORY_SHOTS=folder (see Shots.swift).
     private func applyPreview() {
         if ShotSession.isActive { return ShotSession.start(runner: runner, store: store) }
         let env = ProcessInfo.processInfo.environment
@@ -123,9 +122,9 @@ struct MainView: View {
     }
     #endif
 
-    // MARK: - Nastavení z boku
+    // MARK: - Settings side panel
 
-    /// Panel má pevnou šířku a při otevírání jen vyjede zprava (animuje se posun, nic se nepřeskládává).
+    /// The panel has a fixed width and just slides in from the right (only the offset animates, nothing is re-laid out).
     private var settingsPanel: some View {
         SettingsInspector()
             .frame(width: settingsWidth)
@@ -138,7 +137,7 @@ struct MainView: View {
             .accessibilityHidden(!settingsOpen)
     }
 
-    /// Okraj panelu jde táhnout (šířka 360–520 bodů).
+    /// The panel edge can be dragged (width 360–520 points).
     private var resizeHandle: some View {
         Color.clear
             .frame(width: 6)
@@ -158,11 +157,11 @@ struct MainView: View {
             )
     }
 
-    /// Otevře/zavře nastavení. Když by na obsah nezbylo dost místa, okno se o chybějící kus
-    /// plynule rozšíří (a po zavření zase zúží), takže se karty nemačkají.
-    /// Hlavní obsah se na novou šířku přeskládá jen jednou, hned na začátku (prolne Crossfade), a během
-    /// animace má pevnou šířku – panel přes něj jen vyjede. Dřív se obsah zužoval po snímcích a každý
-    /// snímek znamenal přeskládat celé okno (vypadalo to jako 5 snímků za sekundu).
+    /// Opens/closes the settings. If there wouldn't be enough room left for the content, the window smoothly
+    /// widens by the missing amount (and narrows again on close), so the cards don't get squeezed.
+    /// The main content is re-laid out to the new width only once, right at the start (blended by Crossfade),
+    /// and keeps a fixed width during the animation – the panel just slides over it. Previously the content
+    /// narrowed frame by frame and every frame re-laid out the whole window (it looked like 5 frames per second).
     private func setSettings(_ open: Bool) {
         let duration = Self.panelAnimation
         guard open != settingsOpen else { return }
@@ -207,7 +206,7 @@ struct MainView: View {
             guard generation == panelGeneration else { return }
             var plain = Transaction()
             plain.disablesAnimations = true
-            withTransaction(plain) { frozenMainWidth = nil }   // rozvržení je už stejné, nic se nepohne
+            withTransaction(plain) { frozenMainWidth = nil }   // the layout is already final, nothing moves
             if open { minLocked = true }
         }
     }
@@ -218,8 +217,8 @@ struct MainView: View {
         Crossfade.run(in: window.window) { page = new }
     }
 
-    /// Obrazovka s vlastním posouváním. Obě zůstávají postavené, přepne se jen viditelnost (a prolne
-    /// Crossfade) – dřív se při každém přepnutí jedna celá zahodila a druhá stavěla znovu, a to sekalo.
+    /// A screen with its own scrolling. Both stay built, only the visibility switches (blended by
+    /// Crossfade) – previously every switch threw one away and rebuilt the other, and that stuttered.
     private func pageView<Content: View>(_ which: Page, @ViewBuilder content: () -> Content) -> some View {
         let shown = page == which
         return ScrollView {
@@ -242,13 +241,13 @@ struct MainView: View {
         }
     }
 
-    // MARK: - Lišta
+    // MARK: - Toolbar
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         if #available(macOS 26.0, *) {
-            // bez skleněné „kapsle“ kolem položek lišty, jako v návrhu; pružná mezera odsune
-            // tlačítka doprava (jinak je macOS 26 staví hned za název)
+            // no glass "capsule" around the toolbar items, as in the design; a flexible spacer pushes
+            // the buttons to the right (otherwise macOS 26 puts them right after the title)
             ToolbarItem(placement: .navigation) { titleItem }.sharedBackgroundVisibility(.hidden)
             ToolbarSpacer(.flexible)
             ToolbarItem(placement: .automatic) { actionItems }.sharedBackgroundVisibility(.hidden)
@@ -297,7 +296,7 @@ struct MainView: View {
     }
 }
 
-/// Obsah hlavního okna: hero karta, kroky, fáze, dlaždice, panel tagů a výpis.
+/// The Overview screen: hero card, steps, phases, tiles, tags panel and log.
 struct MainColumn: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
@@ -325,9 +324,9 @@ struct MainColumn: View {
         .onChange(of: runner.finishedAt) { _, _ in lastBox = LastBox.load() }
     }
 
-    // MARK: - Kroky
+    // MARK: - Steps
 
-    /// Čtyři karty vedle sebe; když je na ně úzko (třeba s otevřeným nastavením), dvě a dvě.
+    /// Four cards side by side; when space is tight (e.g. with the settings open), two by two.
     private var stepsRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
@@ -352,7 +351,7 @@ struct MainColumn: View {
                 step.set(&store.config.steps, !on)
             }
         }
-        // ViewThatFits porovnává ideální šířku: pod ~200 bodů na kartu se text láme po slovech
+        // ViewThatFits compares ideal widths: below ~200 points per card the text wraps word by word
         .frame(minWidth: 0, idealWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -374,7 +373,7 @@ struct MainColumn: View {
         }
     }
 
-    // MARK: - Dlaždice
+    // MARK: - Tiles
 
     private var tiles: some View {
         let c = store.config
@@ -399,7 +398,7 @@ struct MainColumn: View {
         }
     }
 
-    // MARK: - Výpis
+    // MARK: - Log
 
     private var logSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -429,7 +428,6 @@ struct MainColumn: View {
                     .help(tr("Zkopíruje celý výpis. Kus výpisu označíš myší a zkopíruješ Cmd+C.",
                              "Copies the whole log. To copy a part, select it and press Cmd+C."))
                     Button { runner.clear() } label: { Label(tr("Vymazat", "Clear"), systemImage: "trash") }
-
                         .disabled(runner.isRunning || runner.lines.isEmpty)
                 }
                 .labelStyle(.iconOnly)
@@ -442,9 +440,9 @@ struct MainColumn: View {
     }
 }
 
-// MARK: - Lišta
+// MARK: - Toolbar buttons
 
-/// Tlačítko v liště: ikona + text, při najetí podbarvené, aktivní v barvě akcentu.
+/// Toolbar button: icon + text, highlighted on hover, in the accent color when active.
 struct HeaderButtonStyle: ButtonStyle {
     let active: Bool
 
@@ -483,10 +481,10 @@ struct HeaderLabelStyle: LabelStyle {
     }
 }
 
-// MARK: - Přepnutí jazyka
+// MARK: - Language switch
 
-/// Prolnutí celého okna přes Core Animation: změna se provede naráz (jeden průchod SwiftUI) a starý
-/// obraz s novým prolne systém. SwiftUI animace by místo toho přepočítávala okno v každém snímku.
+/// Crossfades the whole window via Core Animation: the change is applied at once (one SwiftUI pass) and the
+/// system blends the old image into the new one. A SwiftUI animation would recompute the window on every frame instead.
 @MainActor
 enum Crossfade {
     static func run(in window: NSWindow? = nil, duration: Double = 0.22, _ change: () -> Void) {
@@ -505,7 +503,7 @@ enum Crossfade {
     }
 }
 
-/// Změna jazyka: texty se přepíšou na místě (viz L10n) a staré s novými se prolnou.
+/// Language change: the texts are rewritten in place (see L10n) and the old ones crossfade into the new ones.
 @MainActor
 enum LanguageSwitch {
     static func change(to lang: AppLanguage, store: ConfigStore) {
@@ -514,7 +512,7 @@ enum LanguageSwitch {
     }
 }
 
-/// Je obrazovka (Přehled / Statistiky) právě vidět? Skrytá nereaguje na klávesové zkratky.
+/// Is the screen (Overview / Stats) visible right now? A hidden one doesn't react to keyboard shortcuts.
 private struct PageActiveKey: EnvironmentKey {
     static let defaultValue = true
 }
@@ -526,8 +524,8 @@ extension EnvironmentValues {
     }
 }
 
-/// Rozostření jen když je potřeba (okno se souhlasem). `.blur(radius: 0)` by celé okno pořád kreslilo
-/// přes další vrstvu, což s animovaným pozadím zbytečně zatěžovalo procesor.
+/// Blur only when needed (consent window). `.blur(radius: 0)` would still draw the whole window through
+/// an extra layer, which put needless load on the CPU with the animated background.
 private struct BlurWhen: ViewModifier {
     let on: Bool
 
@@ -536,9 +534,9 @@ private struct BlurWhen: ViewModifier {
     }
 }
 
-// MARK: - Okno
+// MARK: - Window
 
-/// Odkaz na okno, ve kterém view je (kvůli rozšíření okna při otevření nastavení).
+/// Reference to the window the view is in (for widening the window when the settings open).
 final class WindowRef {
     weak var window: NSWindow?
 }

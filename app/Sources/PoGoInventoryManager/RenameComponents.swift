@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - Dílky šablony jména
+// MARK: - Name template pieces
 
-/// Druhy dílků šablony (stejné klíče čte bot v core/pokecalc.py).
+/// Kinds of template pieces (the bot reads the same keys in core/pokecalc.py).
 enum NamePiece {
     struct Info {
         let label: String
@@ -11,7 +11,7 @@ enum NamePiece {
         var glyph: String? = nil
     }
 
-    /// Názvy v aktuálním jazyce (proto počítané, ne konstanta).
+    /// Names in the current language (hence computed, not a constant).
     static var all: [String: Info] {
         [
             "iv": Info(label: tr("IV v %", "IV in %"), short: "IV %"),
@@ -42,7 +42,7 @@ enum NamePiece {
 
     static func info(_ k: String) -> Info { all[k] ?? Info(label: k, short: k) }
 
-    /// Celé jméno podle šablony (bez ořezu na 12 znaků – ten ukazuje náhled).
+    /// The full name from the template (not cut to 12 characters – the preview shows the cut).
     static func render(_ tokens: [NameToken], _ values: [String: String]) -> String {
         tokens.map { t in info(t.k).sep ?? (t.k == "text" ? (t.v ?? "") : (values[t.k] ?? "")) }.joined()
     }
@@ -50,7 +50,7 @@ enum NamePiece {
     static let maxLength = 12
 }
 
-/// Ukázkový kus pro náhled jména.
+/// Sample Pokémon for the name preview.
 struct NameSample: Identifiable {
     let id = UUID()
     let name: String
@@ -61,7 +61,7 @@ struct NameSample: Identifiable {
     var pct: Int { Int((Double(iv.reduce(0, +)) / 45 * 100).rounded()) }
     var subtitle: String { percentText(pct) + " · " + iv.map(String.init).joined(separator: "/") }
 
-    /// Ukázky z návrhu, dokud bot inventář nepřečte.
+    /// Samples from the design, used until the bot has read the storage.
     static let design: [NameSample] = [
         NameSample(name: "Baxcalibur", iv: [14, 13, 14], values: values("Baxcalibur", "Baxcalibur", [14, 13, 14], 15, 1504, 3968, 12, 5, 30)),
         NameSample(name: "Machop", iv: [15, 15, 14], values: values("Machop", "Machamp", [15, 15, 14], 22, 2105, 3420, 48, 3, 98)),
@@ -78,9 +78,10 @@ struct NameSample: Identifiable {
     }
 }
 
-/// Poslední přečtený inventář (~/.pogo/last_box.json, zapisuje bot): kolik kusů je v rozsahu IV a ukázky jmen.
-/// Soubor se čte jen jednou a znovu až po změně (podle data úpravy); výsledky pro rozsah se pamatují.
-/// Pohledy si ho berou v inicializaci stavu, která běží při každém překreslení – proto musí být levný.
+/// The storage as of the last read (~/.pogo/last_box.json, written by the bot): how many Pokémon are in
+/// an IV range, and name samples.
+/// The file is read once and again only after it changes (by modification date); per-range results are cached.
+/// Views load it in their state initializer, which runs on every redraw – so it has to be cheap.
 @MainActor
 final class LastBox {
     struct Item: Decodable {
@@ -106,7 +107,7 @@ final class LastBox {
         }
     }
 
-    /// Od nejvyššího IV.
+    /// Sorted from the highest IV.
     let items: [Item]
     private var counts: [ClosedRange<Int>: Int] = [:]
     private var sampleCache: [ClosedRange<Int>: [NameSample]] = [:]
@@ -120,7 +121,7 @@ final class LastBox {
 
     static func load() -> LastBox? {
         #if DEBUG
-        if ProcessInfo.processInfo.environment["IVORY_SHOTS"] != nil { return nil }   // snímky pro README ukazují ukázková jména, ne vlastní box
+        if ProcessInfo.processInfo.environment["IVORY_SHOTS"] != nil { return nil }   // README screenshots show the sample names, not your own storage
         #endif
         guard let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else {
             cached = nil
@@ -143,7 +144,7 @@ final class LastBox {
         return n
     }
 
-    /// Ukázky: tři nejlepší kusy v rozsahu (se spočítaným druhem) a jeden s vlastní přezdívkou.
+    /// Samples: the three best Pokémon in the range (with species data computed) and one with a custom nickname.
     func samples(in range: ClosedRange<Int>) -> [NameSample] {
         if let cached = sampleCache[range] { return cached }
         let inRange = items.filter { range.contains($0.pct) }
@@ -159,14 +160,15 @@ final class LastBox {
     }
 }
 
-// MARK: - Dvojitý posuvník
+// MARK: - Dual slider
 
-/// Posuvník se dvěma úchyty 0–100 (Slider má jen jeden). Tah myší, klik do dráhy, šipky (Shift = po 5).
+/// A slider with two knobs, 0–100 (Slider has only one). Mouse drag, click on the track, arrow keys
+/// (Shift = steps of 5).
 struct DualRange: View {
     @Binding var lo: Int
     @Binding var hi: Int
     @Environment(\.isEnabled) private var isEnabled
-    @State private var dragging: Int?          // 0 = od, 1 = do
+    @State private var dragging: Int?          // 0 = from, 1 = to
     @FocusState private var focus: Int?
 
     var body: some View {
@@ -241,9 +243,9 @@ struct DualRange: View {
     }
 }
 
-// MARK: - Počítadlo znaků
+// MARK: - Character counter
 
-/// „11/12“ s dvanácti čárkami; přes limit červeně s výstrahou.
+/// "11/12" with twelve ticks; over the limit it turns red with a warning.
 struct CharCounter: View {
     let n: Int
     var max = NamePiece.maxLength
@@ -273,10 +275,10 @@ struct CharCounter: View {
     }
 }
 
-// MARK: - Dílek šablony
+// MARK: - Template piece
 
-/// Dílek v šabloně: úchyt, název, hodnota z ukázky, křížek. Oddělovač je malý čtvereček,
-/// vlastní text se píše přímo do dílku.
+/// A piece in the template: drag handle, name, value from the sample, remove button. A separator is a small square,
+/// custom text is typed straight into the piece.
 struct NameChipView: View {
     @Binding var token: NameToken
     let value: String
@@ -322,7 +324,6 @@ struct NameChipView: View {
                 }
                 .buttonStyle(.plain)
                 .help(tr("Odebrat dílek", "Remove the piece"))
-
             }
         }
         .foregroundStyle(Theme.text)

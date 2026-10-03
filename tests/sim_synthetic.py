@@ -1,32 +1,32 @@
-"""Syntetický telefon: všechny obrazovky hry kreslí sám (nepotřebuje screenshoty ze hry).
+"""Synthetic phone: draws every game screen itself (needs no game screenshots).
 
-Testuje celý běh: cesta do boxu, napsání hledání, řazení, kontrola tagů na začátku
-(chybějící tagy založí v barvě z nastavení), duplicity -> tag Removable, celý box -> IV tagy.
-Dialog pro nový tag má varianty (klávesnice se otevře sama / Enter tag rovnou založí /
-barvy ve dvou řadách / nový tag se sám zaškrtne), ať bot nezávisí na jedné podobě dialogu.
-Scénář realny_telefon chová jako skutečný iPhone: seznam po tahu ujede 1,6× dál než prst,
-box je větší (legendy s blízkým CP), CP v appraisalu se občas nepřečte, na posledním
-Pokémonovi klepnutí na místo šipky ▶ appraisal zavře.
+Tests a whole run: the way into the storage, typing the search, sorting, checking the tags at the start
+(missing tags are created in the color from the settings), duplicates -> Removable tag, the whole storage -> IV tags.
+The new-tag dialog comes in variants (the keyboard opens by itself / Enter creates the tag right away /
+colors in two rows / the new tag gets checked by itself), so the bot does not depend on one form of the dialog.
+The real_phone scenario behaves like a real iPhone: after a drag the list moves 1.6× further than the finger,
+the storage is bigger (legendaries with close CP), the CP in the appraisal is sometimes unreadable, and on the
+last Pokémon a tap where the ▶ arrow would be closes the appraisal.
 
-  python sim5.py                 # všechny scénáře
-  python sim5.py verbose         # jeden scénář s výpisem bota
+  python sim_synthetic.py                 # all scenarios
+  python sim_synthetic.py verbose         # one scenario with the bot's log
+  python sim_synthetic.py real_phone ...  # only the named scenarios
 """
 import io, itertools, os, re, sys, time, random, tempfile
 os.environ["POGO_NO_STREAM"] = "1"
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "core"))
-import pogo_bot as S
+from support import S
 import pokecalc as PC
 
-TMP = Path(tempfile.mkdtemp(prefix="pogo_sim5_"))
-S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "pamet.json"; S.OUT_DIR = TMP / "runs"
+TMP = Path(tempfile.mkdtemp(prefix="pogo_sim_synthetic_"))
+S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "memory.json"; S.OUT_DIR = TMP / "runs"
 S.BOX_FILE = TMP / "last_box.json"; S.LIVE_FILE = TMP / "live.jpg"
 S.NAV_TIMEOUT = 60
 
-W, H = 904, 1966                      # jako video stream z iPhonu (75 %)
-PT_W, PT_H = 402, 874                 # velikost okna v bodech (klepnutí)
+W, H = 904, 1966                      # like the iPhone video stream (75 %)
+PT_W, PT_H = 402, 874                 # window size in points (for taps)
 ROW0, PITCH, COLS = 0.274, 0.1665, [0.18, 0.495, 0.81]
 GAME_COLORS = {"blue": (66, 135, 230), "green": (82, 186, 106), "purple": (152, 101, 220), "yellow": (243, 196, 58),
                "red": (226, 76, 80), "orange": (242, 145, 60), "gray": (150, 154, 160), "black": (48, 48, 52)}
@@ -52,7 +52,7 @@ def png(img):
     b = io.BytesIO(); img.save(b, "JPEG", quality=88); return b.getvalue()
 
 def make_sprite(species):
-    """Jednoduchý obrázek druhu: pár barevných tvarů podle jména (každý druh jiný)."""
+    """A simple species image: a few colored shapes seeded by the name (different for each species)."""
     rnd = random.Random(species)
     w, h = int(0.22 * W), int(0.075 * H)
     img = Image.new("RGB", (w, h), (238, 248, 238)); d = ImageDraw.Draw(img)
@@ -91,40 +91,40 @@ class Phone:
                  auto_check=False, existing_tags=(), nav=True, swipe_closes=False, gain=1.0, cp_flaky=0.0,
                  select_all=False, multi_fling=0.0, big=0, select_all_search=True, ghost=0, done_stuck=0,
                  check_delay=0.0, twins_rev=False):
-        self.twins_rev = twins_rev                            # výsledky hledání řadí kusy se stejným druhem i CP opačně
+        self.twins_rev = twins_rev                            # search results reverse Pokémon of the same species and CP
         self.mons = mons; self.rnd = random.Random(seed); self.glitch = glitch
-        self.gain = gain                                      # seznam ujede gain× víc než prst (iPhone ~1,6)
-        self.cp_flaky = cp_flaky                              # jak často není v appraisalu CP čitelné
-        self.select_all = select_all                          # starší verze hry: SELECT ALL v multiselectu
-        self.select_all_search = select_all_search            # SELECT ALL ve výsledcích hledání
-        self.multi_fling = multi_fling                        # jak často posun v multiselectu ujede o kus dál
+        self.gain = gain                                      # the list moves gain× further than the finger (iPhone ~1.6)
+        self.cp_flaky = cp_flaky                              # how often the CP is unreadable in the appraisal
+        self.select_all = select_all                          # older game version: SELECT ALL in multiselect
+        self.select_all_search = select_all_search            # SELECT ALL in search results
+        self.multi_fling = multi_fling                        # how often a scroll in multiselect overshoots
         self.kb_auto, self.return_submits, self.two_rows, self.auto_check = kb_auto, return_submits, two_rows, auto_check
-        self.nav = nav                                        # jde v appraisalu přejít na dalšího (▶ / swipe)?
-        self.swipe_closes = swipe_closes                      # šipka ▶ není a swipe appraisal zavře
-        self.ghost, self.ghost_idx = ghost, None              # kus s jiným CP, než bot přečetl (1 = v dávce, 2 = sám)
-        self.done_stuck = done_stuck                          # DONE tagy uloží, ale výběr tagů zůstane viset
-        self.check_delay = check_delay                        # fajfky se ve výběru tagů ukážou až po chvilce
+        self.nav = nav                                        # can the appraisal move on to the next one (▶ / swipe)?
+        self.swipe_closes = swipe_closes                      # no ▶ arrow, and a swipe closes the appraisal
+        self.ghost, self.ghost_idx = ghost, None              # Pokémon whose CP the bot misreads (1 = in a batch, 2 = alone)
+        self.done_stuck = done_stuck                          # DONE saves the tags, but the tag picker stays open
+        self.check_delay = check_delay                        # check marks in the tag picker appear only after a moment
         self.list_opened = 0.0
         self.state = "map"; self.filtered = False; self.query = ""; self.off = 0.0; self.sel = set(); self.cur = None
         self.sorted = False; self.kb = False; self.typed = ""
         self.list_off = 0.0; self.checked = set(); self.initial = set(); self.list_targets = []; self.list_return = "grid"
-        self.tags = {n: c for n, c in existing_tags}              # název -> barva (tagy ve hře)
+        self.tags = {n: c for n, c in existing_tags}              # name -> color (tags in the game)
         self.created = []; self.queries = []; self.taps = 0; self.bad = []; self.events = []; self.renamed = []
-        self.appraisals = 0; self.nexts = 0                    # kolikrát se otevřel appraisal / klepla šipka ▶
-        self.hide_chips = set()                                # štítky tagů, které v detailu OCR „přehlédne“
-        self.mixed = set(); self.touched = set()               # výběr více Pokémonů: tag má jen část („Mixed“)
+        self.appraisals = 0; self.nexts = 0                    # times the appraisal was opened / the ▶ arrow tapped
+        self.hide_chips = set()                                # tag chips that OCR "misses" on the detail screen
+        self.mixed = set(); self.touched = set()               # multi-Pokémon selection: only some have the tag ("Mixed")
         self.dlg_color = "blue"
         class CE:
             def get_command(s, n): return ("POST", "/x")
             def add_command(s, *a): pass
         self.command_executor = CE()
 
-    # ------------------------------------------------------------ co box ukazuje
+    # ------------------------------------------------------------ what the storage shows
     def shown(self):
-        """Co box ukazuje: bez hledání všechno, jinak podle hledání jako ve hře – skupiny oddělené &
-        musí platit všechny, v nich stačí jedna z možností oddělených čárkou, ! = neplatí.
-        cpN = přesné CP, count = druh je v boxu aspoň 2× (duplicity), ostatní slova (legendary,
-        ultra beasts) v simulaci nic nevybírají."""
+        """What the storage shows: everything without a search, otherwise filtered like the game does.
+        All groups separated by & must match; within a group one of the comma-separated options is enough;
+        ! = does not match. cpN = exact CP, count = the species is in the storage at least 2× (duplicates);
+        other words (legendary, ultra beasts) select nothing in the simulation."""
         if not self.filtered:
             return list(range(len(self.mons)))
         cnt = {}
@@ -137,7 +137,7 @@ class Phone:
             return v != neg
         groups = [[t.strip().lower() for t in g.split(",") if t.strip()] for g in self.query.split("&")]
         out = [i for i, m in enumerate(self.mons) if all(any(term(m, t) for t in g) for g in groups if g)]
-        if self.twins_rev:                 # pořadí kusů se stejným číslem i CP hra nedrží – ve výsledcích opačně
+        if self.twins_rev:                 # the game keeps no order for equal number + CP: reversed in the results
             key = lambda i: (self.mons[i]["sp"], self.mons[i]["cp"])
             out = [i for _, grp in itertools.groupby(out, key) for i in reversed(list(grp))]
         return out
@@ -151,12 +151,12 @@ class Phone:
 
     def row_y(self, k): return 0.30 + k * 0.058 - self.list_off
 
-    # ------------------------------------------------------------ kreslení
+    # ------------------------------------------------------------ drawing
     def header(self, d, bar_text=None, active=False):
         d.rectangle([0, 0, W, int(0.215 * H)], fill=(250, 252, 250))
         text_c(d, 0.32, 0.066, "POKÉMON", F(40, True), (60, 70, 70))
         if self.filtered:
-            # při hledání je pod POKÉMON lupa a počet výsledků „(12)“ – jako ve hře
+            # during a search, a magnifier and the result count "(12)" sit under POKÉMON, like in the game
             cx, cy, r = 0.30, 0.093, 0.011
             d.ellipse([int((cx - r) * W), int((cy - 0.006) * H), int((cx + r) * W), int((cy + 0.006) * H)],
                       outline=(120, 130, 130), width=4)
@@ -204,7 +204,7 @@ class Phone:
                 text_c(d, 0.81, 0.098, "SELECT ALL", F(40, True), (255, 255, 255))
             text_c(d, 0.107, 0.117, "X", F(50), (150, 230, 160))
             d.rounded_rectangle([int(.07 * W), int(.835 * H), int(.93 * W), int(.885 * H)], 60, fill=(100, 205, 160)); text_c(d, .5, .86, f"TAG ({n})", F(48, True), (255, 255, 255))
-            # nová verze hry: TRANSFER je šedé (u vybraných legend 0) – OCR ho nemusí přečíst
+            # new game version: TRANSFER is grayed out (0 for selected legendaries), so OCR may not read it
             d.rounded_rectangle([int(.07 * W), int(.912 * H), int(.93 * W), int(.962 * H)], 60, fill=(222, 232, 228)); text_c(d, .5, .937, f"TRANSFER ({n})", F(44, True), (196, 206, 204))
         else:
             for cx in (0.5, 0.87):
@@ -219,7 +219,7 @@ class Phone:
             d.rectangle([int(0.15 * W), int(0.158 * H), int(0.93 * W), int(0.198 * H)], fill=(232, 240, 236))
             s, f = self.typed, F(42)
             while d.textlength(s, font=f) > 0.7 * W and len(s) > 4:
-                s = s[1:]                                   # při psaní je vidět konec textu
+                s = s[1:]                                   # while typing, the end of the text is visible
             text_l(d, 0.17, 0.178, s, f, (50, 60, 60))
             text_c(d, 0.105, 0.178, "<", F(48, True), (60, 120, 120))
         text_l(d, 0.08, 0.26, "Recent searches", F(40, True), (60, 70, 70))
@@ -245,7 +245,7 @@ class Phone:
         m = self.mons[self.cur]
         img = Image.new("RGB", (W, H), (255, 255, 255)); d = ImageDraw.Draw(img)
         d.rectangle([0, 0, W, int(0.36 * H)], fill=(120, 190, 210))
-        if not (bars and self.cp_flaky and self.rnd.random() < self.cp_flaky):    # appraisal CP ztmaví
+        if not (bars and self.cp_flaky and self.rnd.random() < self.cp_flaky):    # the appraisal dims the CP
             text_c(d, 0.47, 0.072, f"CP{m['cp']}", F(90), (255, 255, 255))
         img.paste(SPR[m["sp"]].resize((int(0.44 * W), int(0.15 * H))), (int(0.28 * W), int(0.17 * H)))
         text_c(d, 0.5, 0.422, m["name"], F(66, True), (60, 70, 70))
@@ -372,7 +372,7 @@ class Phone:
         if st == "create": return png(self.render_create())
         raise RuntimeError(st)
 
-    # ------------------------------------------------------------ ovládání
+    # ------------------------------------------------------------ controls
     def get_window_size(self): return {"width": PT_W, "height": PT_H}
 
     @property
@@ -402,24 +402,25 @@ class Phone:
         self.list_opened = time.time()
 
     def done_list(self):
-        # jako hra: zaškrtnuté dostanou všichni; co se klepnutím vypnulo (i z „Mixed“), všem se odebere;
-        # nedotčené „Mixed“ zůstane, jak je
+        # like the game: checked tags go to everyone; anything switched off by a tap (also from "Mixed")
+        # is removed from everyone; untouched "Mixed" stays as it is
         off = {nm for nm in self.touched if nm not in self.checked and nm not in self.mixed}
         for i in self.list_targets:
             self.mons[i]["tags"] |= self.checked
             self.mons[i]["tags"] -= (self.initial - self.checked) | off
         if self.done_stuck and self.list_return == "grid" and self.checked - self.initial:
-            # tagy se uložily, ale výběr tagů zůstane viset – bot to vezme jako chybu a dávku zopakuje;
-            # vybraní už tag mají, takže ho při opakování nesmí odškrtnout
+            # the tags were saved, but the tag picker stays open: the bot treats it as an error and repeats
+            # the batch; the selected Pokémon already have the tag, so the repeat must not uncheck it
             self.done_stuck -= 1
             self.initial = set(self.checked)
-            self.events.append("DONE uložilo, ale obrazovka visí")
+            self.events.append("DONE saved, but the screen is stuck")
             return
         self.state = self.list_return; self.sel = set()
 
     def make_ghost(self, q):
-        """Kus, jehož CP bot přečetl špatně: ve hře má jiné CP, než bot napsal do hledání.
-        ghost=1: kus uprostřed dávky (část výsledků chybí), ghost=2: jediný kus hledání (nic se nenajde)."""
+        """A Pokémon whose CP the bot misread: in the game it has a different CP than the bot typed into the search.
+        ghost=1: a Pokémon in the middle of a batch (some results are missing), ghost=2: the only Pokémon
+        in the search (nothing is found)."""
         m = re.match(r"^(cp\d+(?:,cp\d+)*)(?:&|$)", q)
         if not m:
             return
@@ -432,13 +433,13 @@ class Phone:
         new = self.mons[i]["cp"] + 1
         while new in used:
             new += 1
-        self.events.append(f"CP{self.mons[i]['cp']} je ve hře CP{new}")
+        self.events.append(f"CP{self.mons[i]['cp']} is CP{new} in the game")
         self.mons[i]["cp"], self.ghost_idx = new, i
 
     def finish_create(self):
         name = self.typed.strip()
         if name:
-            if name in self.tags: self.bad.append(f"duplicitní tag {name}")
+            if name in self.tags: self.bad.append(f"duplicate tag {name}")
             self.tags[name] = self.dlg_color; self.created.append((name, self.dlg_color))
             if self.auto_check: self.checked.add(name)
         self.state, self.typed, self.kb = "taglist", "", False
@@ -485,15 +486,15 @@ class Phone:
                 self.state = "detail"
             return {"value": None}
         if self.state == "grid" and dy < -0.2 and self.off == 0 and not held:
-            # jako skutečná hra: rychlý tah dolů na začátku seznamu inventář zavře
+            # like the real game: a quick downward swipe at the top of the list closes the storage
             self.state, self.filtered, self.query = "map", False, ""
-            self.events.append("inventář zavřen tahem dolů")
+            self.events.append("storage closed by swiping down")
             return {"value": None}
         if self.state in ("grid", "multi"):
             dy = dy * 3 if not held else dy * self.gain - 0.01 * np.sign(dy) + self.rnd.uniform(-0.03, 0.03)
             if self.state == "multi" and self.multi_fling and self.rnd.random() < self.multi_fling:
-                dy += 0.7 * np.sign(dy)                       # posun ujel o několik řádků
-                self.events.append("multiselect ujel")
+                dy += 0.7 * np.sign(dy)                       # the scroll overshot by several rows
+                self.events.append("multiselect overshot")
             self.off = float(min(self.max_off(), max(0.0, self.off + dy)))
         elif self.state == "taglist":
             mx = max(0.0, 0.30 + (len(self.list_rows()) - 1) * 0.058 - 0.78)
@@ -530,7 +531,7 @@ class Phone:
         if st == "map" and near(.5, .935, .06, .035): self.state = "menu"
         elif st == "menu" and near(.22, .81, .09, .07): self.state, self.filtered, self.off = "grid", False, 0.0
         elif st == "search":
-            if self.kb and y > 0.62: return                       # klávesy se neťukají – píše se přes keys
+            if self.kb and y > 0.62: return                       # the keyboard isn't tapped: typing goes through keys()
             if near(.105, .178, .05, .02): self.state, self.kb, self.typed = "grid", False, ""
             elif near(.5, .178, .4, .025): self.kb = True
         elif st == "sort_menu":
@@ -549,29 +550,29 @@ class Phone:
                     else: self.state, self.cur = "detail", i
         elif st == "rename":
             if self.kb and y > 0.62: return
-            if not (0.08 < x < 0.92 and 0.30 < y < 0.50): self.state, self.typed = "detail", ""   # zrušit
+            if not (0.08 < x < 0.92 and 0.30 < y < 0.50): self.state, self.typed = "detail", ""   # cancel
         elif st == "detail":
             if near(.5, .422, .3, .025): self.state, self.typed = "rename", self.mons[self.cur]["name"]; return
             if near(.87, .94, .08, .04): self.state = "dmenu"
             elif near(.5, .94, .05, .03): self.state = "grid"
-            elif near(.5, .80, .45, .025): self.bad.append("EVOLVE řádek")
-            elif near(.5, .75, .45, .02): self.bad.append("POWER UP řádek")
+            elif near(.5, .80, .45, .025): self.bad.append("EVOLVE row")
+            elif near(.5, .75, .45, .02): self.bad.append("POWER UP row")
         elif st == "dmenu":
             if near(.70, .771, .3, .025): self.state = "intro"; self.appraisals += 1
             elif near(.70, .61, .3, .025): self.open_list([self.cur], "detail")
-            elif near(.70, .853, .3, .025): self.bad.append("TRANSFER v menu")
+            elif near(.70, .853, .3, .025): self.bad.append("TRANSFER in menu")
             elif near(.87, .94, .08, .04): self.state = "detail"
         elif st == "intro": self.state = "bars"
         elif st == "bars":
-            if x > 0.93 and 0.72 < y < 0.92:                            # šipka ▶
+            if x > 0.93 and 0.72 < y < 0.92:                            # the ▶ arrow
                 self.nexts += 1
                 if not self.swipe_closes and not self.next_mon():
-                    self.state = "detail"                               # poslední: šipka není, klepnutí zavře
-            elif x < 0.07 and 0.72 < y < 0.92: pass                     # šipka ◀
+                    self.state = "detail"                               # last one: no arrow, the tap closes it
+            elif x < 0.07 and 0.72 < y < 0.92: pass                     # the ◀ arrow
             else: self.state = "detail"
         elif st == "multi":
             if near(.5, .86, .43, .025): self.open_list(sorted(self.sel), "grid")
-            elif near(.5, .937, .45, .025): self.bad.append("TRANSFER v multiselectu")
+            elif near(.5, .937, .45, .025): self.bad.append("TRANSFER in multiselect")
             elif near(.107, .117, .06, .03): self.state, self.sel = "grid", set()
             elif near(.81, .098, .15, .025) and (self.select_all or (self.filtered and self.select_all_search)):
                 self.sel = set(self.shown()); self.events.append("select all")
@@ -587,15 +588,15 @@ class Phone:
                     if nm.startswith("+"):
                         self.state, self.typed, self.kb, self.dlg_color = "create", "", self.kb_auto, "blue"
                     elif nm in self.mixed:
-                        self.mixed.discard(nm); self.touched.add(nm)      # „Mixed“ → nic (jako hra)
+                        self.mixed.discard(nm); self.touched.add(nm)      # "Mixed" → nothing (like the game)
                     else:
                         self.checked ^= {nm}; self.touched.add(nm)
                     return
         elif st == "create":
             if self.kb and y > 0.62: return
             if not (0.06 < x < 0.94 and 0.25 < y < 0.70):
-                self.state, self.typed, self.kb = "taglist", "", False      # klepnutí mimo dialog = zrušit
-                self.events.append("dialog zrušen")
+                self.state, self.typed, self.kb = "taglist", "", False      # a tap outside the dialog = cancel
+                self.events.append("dialog cancelled")
                 return
             for (sx, sy), cname in zip(self.swatch_pos(), COLOR_ORDER):
                 if abs(x - sx) < 0.045 and abs(y - sy) < 0.022:
@@ -605,8 +606,8 @@ class Phone:
 
 
 def merging_ocr(orig):
-    """OCR jako na skutečném iPhonu: dlouhé přezdívky sousedních buněk na stejném řádku (s tečkou tagu)
-    slije do jednoho textu („• MAX 2992 L15 •MAX 3619 L20“) – po přejmenování podle šablony."""
+    """OCR like on a real iPhone: merges the long nicknames of neighboring cells in the same row (with the tag dot)
+    into one text ("• MAX 2992 L15 •MAX 3619 L20"), as happens after renaming with a template."""
     def ocr(data, fast=False):
         out = orig(data, fast)
         names = sorted((t for t in out if t["text"].lstrip().startswith("•") and len(t["text"]) >= 10
@@ -625,13 +626,13 @@ CP_QUERY = re.compile(r"^cp\d+(,cp\d+)*(&(.+))?$")
 
 
 def query_ok(q):
-    """Hledání, které bot smí napsat: SEARCH_QUERY, nebo seznam CP (případně & SEARCH_QUERY)."""
+    """A search the bot may type: SEARCH_QUERY, or a list of CPs (optionally & SEARCH_QUERY)."""
     m = CP_QUERY.match(q)
     return q == QUERY or bool(m and (m.group(3) is None or m.group(3) == QUERY))
 
 
 def fill_stats(m):
-    """CP a HP spočítané ze skutečných statů druhu, IV a úrovně – jako ve hře."""
+    """CP and HP computed from the species' real stats, IVs and level, like in the game."""
     st = PC.SPECIES[m["sp"].lower()]["stats"]
     m["cp"] = PC.cp_of(st, m["iv"], PC._cpm_at(m["level"]))
     m["hp"] = max(10, int((st[2] + m["iv"][2]) * PC._cpm_at(m["level"])))
@@ -639,7 +640,7 @@ def fill_stats(m):
 
 def make_mons(seed, big=0):
     rnd = random.Random(seed)
-    # pořadí podle čísla v Pokédexu – bot box řadí podle čísla
+    # ordered by Pokédex number: the bot sorts the storage by number
     spec = [("Charmander", 3), ("Squirtle", 1), ("Pidgey", 3), ("Rattata", 2), ("Machop", 1), ("Geodude", 2), ("Eevee", 1)]
     mons = []
     for sp, n in spec:
@@ -647,15 +648,15 @@ def make_mons(seed, big=0):
             iv = tuple(rnd.randint(3, 15) for _ in range(3))
             mons.append({"sp": sp, "iv": iv, "level": rnd.randint(16, 60) / 2, "name": sp, "tags": set()})
     mons[1]["iv"] = (15, 15, 15)                      # 100 %
-    mons[6]["tags"] = {"Mega"}                        # jiný tag – IV tag doplnit
+    mons[6]["tags"] = {"Mega"}                        # another tag: add the IV tag
     mons[3]["iv"] = (5, 6, 7)
-    mons[3]["tags"] = {"95-99% Insane"}               # nesedící IV tag – odebrat a dát správný
-    mons[12]["tags"] = {"100% Perfect", "70-0% Garbage"}   # dva IV tagy – nechat jen správný
-    mons[9]["iv"] = (0, 15, 14)                       # Machop: dobré PvP IV
-    mons[10]["name"] = "Kytka"                        # vlastní přezdívka – nepřejmenovat
+    mons[3]["tags"] = {"95-99% Insane"}               # wrong IV tag: remove it and add the right one
+    mons[12]["tags"] = {"100% Perfect", "70-0% Garbage"}   # two IV tags: keep only the right one
+    mons[9]["iv"] = (0, 15, 14)                       # Machop: good PvP IVs
+    mons[10]["name"] = "Kytka"                        # custom nickname: do not rename
     mons[10]["iv"] = (13, 14, 13)
-    mons[7]["iv"] = (14, 13, 13)                      # 89 % – přejmenovat
-    if big:                                           # větší box: legendy s blízkým CP (jako ve skutečnosti)
+    mons[7]["iv"] = (14, 13, 13)                      # 89 %: rename
+    if big:                                           # bigger storage: legendaries with close CP (as in reality)
         extra = [("Dratini", 3), ("Mewtwo", 6), ("Chikorita", 2), ("Larvitar", 3), ("Kyogre", 9), ("Groudon", 8),
                  ("Dialga", 6), ("Palkia", 6)]
         for sp, n in extra:
@@ -677,40 +678,40 @@ class Args:
 
 
 def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, inject=False, **variant):
-    rerun = variant.pop("rerun", False)       # druhý běh se stejnou pamětí (a jednou nově chycenou Eevee)
-    mixed = variant.pop("mixed", False)       # část kusů má Master League „od včera“ a bot jeho štítek nevidí
-    merge = variant.pop("merge_names", False) # OCR slévá dlouhá jména sousedních buněk (jako iPhone)
-    max_reads = variant.pop("max_reads", None)    # druhý běh smí přečíst nejvýš tolik kusů (appraisal + ▶)
+    rerun = variant.pop("rerun", False)       # a second run with the same memory (and one newly caught Eevee)
+    mixed = variant.pop("mixed", False)       # some have Master League "since yesterday" and the bot cannot see its chip
+    merge = variant.pop("merge_names", False) # OCR merges long names of neighboring cells (like the iPhone)
+    max_reads = variant.pop("max_reads", None)    # the second run may read at most this many Pokémon (appraisal + ▶)
     old_min = S.RENAME["min"]
     S.RENAME["min"] = variant.pop("rename_min", old_min)
     if variant.get("template"):
         S.RENAME["template"] = variant.pop("template")
     mons = make_mons(seed, variant.get("big", 0)); init = [set(m["tags"]) for m in mons]
-    if variant.get("twins_rev"):              # dva Kyogre se stejným CP (a jinými IV a HP) těsně za sebou
+    if variant.get("twins_rev"):              # two Kyogre with the same CP (and different IVs and HP) right after each other
         k = next(i for i, m in enumerate(mons) if m["sp"] == "Kyogre")
         for j, iv in ((k, (12, 12, 15)), (k + 1, (12, 13, 14))):
             mons[j].update(iv=iv, level=20); fill_stats(mons[j])
         assert mons[k]["cp"] == mons[k + 1]["cp"] and mons[k]["hp"] != mons[k + 1]["hp"]
     existing = [("Mega", "orange"), ("100% Perfect", "purple"), ("95-99% Insane", "blue"),
-                ("70-0% Garbage", "black")]                         # ostatní tagy ve hře chybí
+                ("70-0% Garbage", "black")]                         # the other tags are missing in the game
     if mixed:
         existing.append(("Master League", "purple"))
     phone = Phone(mons, seed, existing_tags=existing, **variant)
     run_dir = TMP / f"run_{name}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     S.SEARCH_QUERY = QUERY
-    S.RECHECK_TAGGED = True                  # jako tvoje nastavení: otagované taky zkontrolovat
-    for lg, mx in (("great", 1500), ("ultra", 1500), ("master", 300)):   # vyšší hranice, ať je co tagovat
+    S.RECHECK_TAGGED = True                  # as in the author's settings: recheck tagged ones too
+    for lg, mx in (("great", 1500), ("ultra", 1500), ("master", 300)):   # higher limits so there is something to tag
         S.PVP[lg]["max_rank"] = mx
     if mixed:
         wants = [i for i, m in enumerate(mons)
                  if (PC.league_rank(m["sp"].lower(), m["iv"], "master") or (9999,))[0] <= S.PVP["master"]["max_rank"]]
-        for i in wants[::2]:                          # každý druhý ho už má – výběr bude „Mixed“
+        for i in wants[::2]:                          # every second one already has it: the selection will be "Mixed"
             mons[i]["tags"].add("Master League"); init[i].add("Master League")
         phone.hide_chips = {"Master League"}
     log = S.log
     if not verbose:
         S.log = lambda msg="": None
-    S.MEMORY_FILE = TMP / f"pamet_{name}.json"
+    S.MEMORY_FILE = TMP / f"memory_{name}.json"
     bot = S.Bot(phone, run_dir); bot.udid = "SIM"; bot.fast = fast
     book, book2, mem = S.Book(), S.Book(), S.Memory(S.MEMORY_FILE)
     rep = S.Report(run_dir, 0); err = None; t0 = time.time()
@@ -719,7 +720,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         S.ocr = merging_ocr(orig_ocr)
     if inject:
         def grid_scan_bad(bot):
-            # seznam z posouvání se zdvojenou buňkou a buňkou s nesmyslným CP (jako na skutečném telefonu)
+            # the scrolled list with a duplicated cell and a cell with a nonsense CP (like on a real phone)
             seq = orig_scan(bot)
             if len(seq) > 30:
                 seq.insert(9, dict(seq[8]))
@@ -735,12 +736,12 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         if rerun:
             first = (time.time() - t0, phone.appraisals, phone.nexts)
             if rerun == "config":
-                # mezi běhy se změní nastavení: jiné hranice IV tagů a jiná šablona jména
+                # the settings change between runs: different IV tag limits and a different name template
                 S.IV_TAGS = [(100, "100% Perfect"), (95, "95-99% Insane"), (91, "90-95% Amazing"),
                              (86, "85-90% Great"), (81, "80-85% Good"), (70, "70-80% Mid"), (0, "70-0% Garbage")]
                 S.RENAME["template"] = [{"k": "iv"}, {"k": "space"}, {"k": "short"}]
             else:
-                # mezi běhy přibude nově chycená Eevee – vznikne nová duplicita a nový kus k přečtení
+                # a newly caught Eevee appears between runs: a new duplicate and a new Pokémon to read
                 new = {"sp": "Eevee", "iv": (15, 14, 13), "level": 21.0, "name": "Eevee", "tags": set()}
                 fill_stats(new)
                 k = max(i for i, m in enumerate(mons) if m["sp"] == "Eevee") + 1
@@ -757,8 +758,8 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     finally:
         S.log = log
         S.grid_scan, S.ocr = orig_scan, orig_ocr
-    template = S.RENAME["template"] or PC.DEFAULT_TEMPLATE      # šablona, která platila na konci
-    # --- očekávání
+    template = S.RENAME["template"] or PC.DEFAULT_TEMPLATE      # the template in effect at the end
+    # --- expectations
     ghost = {phone.ghost_idx} if phone.ghost_idx is not None else set()
     ivnames = {n for _, n in S.IV_TAGS}
     by_sp = {}
@@ -802,52 +803,52 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         and (not variant.get("ghost") or ghost) and not phone.done_stuck \
         and (not rerun or (second is not None and second[1] <= 3)) \
         and (max_reads is None or (second is not None and second[1] + second[2] <= max_reads))
-    print(f"{'OK ' if ok else 'CHYBA'} {name:28s} chyba={err} | Removable špatně={bad_rem} | IV špatně={bad_iv} | "
-          f"PvP špatně={bad_pvp} | jména špatně={bad_name} | přejmenováno={phone.renamed} | "
-          f"ztracené jiné tagy={other_lost} | chybí tagy={missing} | špatná barva={wrong_color} | "
-          f"založeno={len(phone.created)} | hledání={len(phone.queries)}× | nebezpečné={phone.bad} | "
-          f"klepnutí={phone.taps} | události={phone.events[:5]} | {time.time() - t0:.0f}s" +
-          (f" | 1. běh {first[0]:.0f}s, appraisal {first[1]}×, ▶ {first[2]}× | 2. běh {second[0]:.0f}s, "
+    print(f"{'OK ' if ok else 'FAIL'} {name:28s} error={err} | Removable wrong={bad_rem} | IV wrong={bad_iv} | "
+          f"PvP wrong={bad_pvp} | names wrong={bad_name} | renamed={phone.renamed} | "
+          f"other tags lost={other_lost} | missing tags={missing} | wrong color={wrong_color} | "
+          f"created={len(phone.created)} | searches={len(phone.queries)}× | dangerous={phone.bad} | "
+          f"taps={phone.taps} | events={phone.events[:5]} | {time.time() - t0:.0f}s" +
+          (f" | run 1 {first[0]:.0f}s, appraisal {first[1]}×, ▶ {first[2]}× | run 2 {second[0]:.0f}s, "
            f"appraisal {second[1]}×, ▶ {second[2]}×" if first and second else ""), flush=True)
-    S.IV_TAGS, S.RENAME["template"] = list(DEFAULT_IV_TAGS), list(DEFAULT_TEMPLATE)   # další scénáře s výchozím
+    S.IV_TAGS, S.RENAME["template"] = list(DEFAULT_IV_TAGS), list(DEFAULT_TEMPLATE)   # later scenarios start from the defaults
     S.RENAME["min"] = old_min
     return ok
 
 
 SCENARIOS = {
-    "zakladni": dict(),
-    "klavesnice_sama": dict(kb_auto=True),
-    "enter_zalozi_tag": dict(return_submits=True),
-    "barvy_ve_dvou_radach": dict(two_rows=True),
-    "novy_tag_se_zaskrtne": dict(auto_check=True),
-    "jen_iv_tagy": dict(only_iv=True),
-    "pvp_a_prejmenovani": dict(steps=["pvp", "rename"]),
-    "pomaly_rezim": dict(fast=False),
-    "prechod_nejde": dict(nav=False),
-    "swipe_zavre_appraisal": dict(swipe_closes=True),
-    "vypadky": dict(glitch=0.04),
-    "jen_duplicity": dict(steps=["duplicates"]),
-    "bez_select_all": dict(big=1, select_all_search=False, steps=["iv", "pvp"]),
-    "realny_telefon": dict(gain=1.6, big=1, cp_flaky=0.15, steps=["iv", "pvp", "rename"]),
-    "realny_vse": dict(gain=1.6, big=1, cp_flaky=0.15),
-    "zdvojeny_seznam": dict(big=1, inject=True, steps=["iv"]),
-    "multiselect_ujede": dict(gain=1.6, big=1, multi_fling=0.3, steps=["iv"]),
-    "cp_v_davce_chybi": dict(big=1, ghost=1),
-    "hledani_nic_nenajde": dict(big=1, ghost=2),
-    "tag_uz_maji": dict(big=1, done_stuck=1, check_delay=0.6, steps=["iv", "pvp"]),
-    "opakovany_beh": dict(big=1, rerun=True),
-    "opakovany_beh_realny": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True),
-    # přejmenování na dlouhá jména („MAX 3351 L15“), která OCR v mřížce slévá – druhý běh je musí poznat z paměti
-    "opakovany_beh_dlouha_jmena": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True, merge_names=True, rename_min=0,
-                                       max_reads=4,
-                                       template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
-                                                 {"k": "space"}, {"k": "lvl"}]),
-    "zmena_nastaveni": dict(big=1, rerun="config"),
-    "mixed_tagy": dict(big=1, mixed=True, steps=["pvp"]),
-    # dva Kyogre se stejným CP, které hledání ukáže v opačném pořadí – jméno musí dostat ten správný
-    "dvojcata_stejne_cp": dict(big=1, twins_rev=True, steps=["iv", "rename"],
-                               template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
-                                         {"k": "space"}, {"k": "lvl"}]),
+    "basic": dict(),
+    "keyboard_auto": dict(kb_auto=True),
+    "enter_creates_tag": dict(return_submits=True),
+    "colors_in_two_rows": dict(two_rows=True),
+    "new_tag_auto_checked": dict(auto_check=True),
+    "only_iv_tags": dict(only_iv=True),
+    "pvp_and_rename": dict(steps=["pvp", "rename"]),
+    "slow_mode": dict(fast=False),
+    "no_next_in_appraisal": dict(nav=False),
+    "swipe_closes_appraisal": dict(swipe_closes=True),
+    "glitches": dict(glitch=0.04),
+    "only_duplicates": dict(steps=["duplicates"]),
+    "no_select_all": dict(big=1, select_all_search=False, steps=["iv", "pvp"]),
+    "real_phone": dict(gain=1.6, big=1, cp_flaky=0.15, steps=["iv", "pvp", "rename"]),
+    "real_phone_all_steps": dict(gain=1.6, big=1, cp_flaky=0.15),
+    "duplicated_list": dict(big=1, inject=True, steps=["iv"]),
+    "multiselect_overshoots": dict(gain=1.6, big=1, multi_fling=0.3, steps=["iv"]),
+    "cp_missing_in_batch": dict(big=1, ghost=1),
+    "search_finds_nothing": dict(big=1, ghost=2),
+    "already_tagged": dict(big=1, done_stuck=1, check_delay=0.6, steps=["iv", "pvp"]),
+    "rerun": dict(big=1, rerun=True),
+    "rerun_real_phone": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True),
+    # renaming to long names ("MAX 3351 L15") that OCR merges in the grid; the second run must recognize them from memory
+    "rerun_long_names": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True, merge_names=True, rename_min=0,
+                             max_reads=4,
+                             template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
+                                       {"k": "space"}, {"k": "lvl"}]),
+    "settings_changed": dict(big=1, rerun="config"),
+    "mixed_tags": dict(big=1, mixed=True, steps=["pvp"]),
+    # two Kyogre with the same CP that the search shows in reverse order; each name must go to the right one
+    "twins_same_cp": dict(big=1, twins_rev=True, steps=["iv", "rename"],
+                          template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
+                                    {"k": "space"}, {"k": "lvl"}]),
 }
 
 if __name__ == "__main__":
@@ -856,5 +857,5 @@ if __name__ == "__main__":
     else:
         only = [a for a in sys.argv[1:] if a in SCENARIOS]
         results = [run(n, **SCENARIOS[n]) for n in (only or SCENARIOS)]
-        print(f"\n{sum(results)}/{len(results)} scénářů v pořádku")
+        print(f"\n{sum(results)}/{len(results)} scenarios passed")
         sys.exit(0 if all(results) else 1)

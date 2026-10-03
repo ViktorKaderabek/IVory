@@ -1,12 +1,12 @@
-"""Výpočty nad statistikami druhů (core/pokedata.json, vytváří ho scripts/build_pokedata.py).
+"""Calculations on species stats (core/pokedata.json, built by scripts/build_pokedata.py).
 
-- druh a úroveň kusu z toho, co je vidět v detailu: jméno, typy, CP, HP a IV
-  (i u přejmenovaných – sedět musí CP i HP zároveň)
-- CP po evoluci, max CP na úrovni 50
-- pořadí IV pro PvP ligy (1 = nejlepší ze 4096 kombinací, pro poslední evoluci pod limitem CP)
-- hodnoty dílků pro šablonu jména
+- species and level of a Pokémon from what the detail screen shows: name, types, CP, HP and IV
+  (renamed ones too – CP and HP must both fit)
+- CP after evolving, max CP at level 50
+- IV rank for the PvP leagues (1 = best of the 4096 combinations, for the last evolution under the CP cap)
+- chip values for the name template
 
-CP = (útok + IV) · √(obrana + IV) · √(výdrž + IV) · CPM² / 10, HP = (výdrž + IV) · CPM.
+CP = (attack + IV) · √(defense + IV) · √(stamina + IV) · CPM² / 10, HP = (stamina + IV) · CPM.
 """
 import json
 import re
@@ -18,8 +18,8 @@ import numpy as np
 
 DATA = json.loads(Path(__file__).with_name("pokedata.json").read_text())
 SPECIES = DATA["species"]
-_CPM = DATA["cpm"]                       # celé úrovně 1, 2, 3 …
-MAX_LEVEL = 50.0                         # strop pro PvP pořadí a max CP
+_CPM = DATA["cpm"]                       # whole levels 1, 2, 3 …
+MAX_LEVEL = 50.0                         # cap for the PvP rank and max CP
 LEAGUES = {"great": 1500, "ultra": 2500, "master": None}
 LEAGUE_LETTER = {"great": "G", "ultra": "U", "master": "M"}
 
@@ -32,7 +32,7 @@ def _cpm_at(level):
     return ((lo * lo + hi * hi) / 2) ** 0.5
 
 
-LEVELS = np.arange(1.0, 51.01, 0.5)                  # úrovně 1 – 51 po půlkách
+LEVELS = np.arange(1.0, 51.01, 0.5)                  # levels 1 – 51 in half steps
 CPM = np.array([_cpm_at(level) for level in LEVELS])
 PVP_LEVELS = LEVELS <= MAX_LEVEL
 IV_GRID = np.array([(a, d, s) for a in range(16) for d in range(16) for s in range(16)])
@@ -44,20 +44,20 @@ def alnum(s):
 
 
 def base_name(name):
-    """„Raichu (Alolan)“ → „Raichu“ (ve hře se forma ve jménu neukazuje)."""
+    """Name without the form: "Raichu (Alolan)" → "Raichu" (the game doesn't show the form in the name)."""
     return re.sub(r"\s*\(.*\)$", "", name or "").strip()
 
 
 NAME_INDEX = {}
 for _sid, _sp in SPECIES.items():
     NAME_INDEX.setdefault(alnum(base_name(_sp["name"])), []).append(_sid)
-    if alnum(_sp["name"]) == "mimejr":            # „Mime (Jr)“ – ve hře „Mime Jr.“, ne forma
+    if alnum(_sp["name"]) == "mimejr":            # "Mime (Jr)" – "Mime Jr." in the game, not a form
         NAME_INDEX.setdefault("mimejr", []).append(_sid)
 
 
 def family_key(sid):
-    """Rodina druhu pro nápovědu z cukru. Druhy bez evolucí (legendy jako Kyurem) rodinu v datech nemají
-    – jejich cukr se jmenuje jako druh."""
+    """Family of a species, for the candy hint. Species without evolutions (legendaries like Kyurem) have no
+    family in the data – their candy is named after the species."""
     sp = SPECIES[sid]
     return alnum(sp["family"]) or "family" + alnum(base_name(sp["name"]))
 
@@ -81,7 +81,7 @@ def _hps(stats, iv):
 
 
 def descendants(sid):
-    """Druh a všechny jeho další evoluce (všechny větve)."""
+    """The species and all of its further evolutions (every branch)."""
     out, todo = [], [sid]
     while todo:
         x = todo.pop(0)
@@ -92,20 +92,21 @@ def descendants(sid):
 
 
 def final_evolution(sid, iv=(15, 15, 15)):
-    """Poslední evoluce; u větvení ta s nejvyšším max CP."""
+    """The last evolution; when it branches, the one with the highest max CP."""
     leaves = [x for x in descendants(sid) if not SPECIES[x]["evolutions"]] or [sid]
     return max(leaves, key=lambda x: cp_of(SPECIES[x]["stats"], iv, _cpm_at(MAX_LEVEL)))
 
 
 def types_fit(sid, types):
-    """Sedí přečtené typy na druh? Z detailu se často přečte jen jeden ze dvou typů (Kyurem: „dragon“
-    bez „ice“), takže stačí, když druh přečtené typy má."""
+    """Do the read types fit the species? Often only one of two types is read from the detail screen
+    (Kyurem: "dragon" without "ice"), so it's enough that the species has the types that were read."""
     return set(types) <= set(SPECIES[sid]["types"])
 
 
 def identify(name, types, cp, hp, iv, family_hint=None, dex_range=None):
-    """Druh a úroveň kusu. Vrací (id druhu, úroveň) nebo (None, None), když to jednoznačně nejde.
-    dex_range: rozmezí čísla v Pokédexu podle sousedů v boxu seřazeném podle čísla."""
+    """Species and level of a Pokémon. Returns (species id, level), or (None, None) when there is no
+    unambiguous answer.
+    dex_range: Pokédex number range, from the neighbors in the storage sorted by number."""
     if not cp or not iv:
         return None, None
     cands = NAME_INDEX.get(alnum(name)) or list(SPECIES)
@@ -129,26 +130,26 @@ def identify(name, types, cp, hp, iv, family_hint=None, dex_range=None):
         return None, None
     kinds = {tuple(SPECIES[c]["stats"]) for c, _ in fits}
     if len(kinds) > 1:
-        # jméno od bota („MAX 3429 L35“): rozhodne druh, jehož max CP (nebo úroveň) ve jméně je
+        # A name given by the bot ("MAX 3429 L35"): the species whose max CP (or level) is in the name wins
         nums = {int(x) for x in re.findall(r"\d+", name or "")}
         named = [f for f in fits if max_cp(f[0], iv) in nums] or \
                 [f for f in fits if nums and f[1] == int(f[1]) and int(f[1]) in nums]
         fits = named or fits
         kinds = {tuple(SPECIES[c]["stats"]) for c, _ in fits}
-    if len(kinds) == 1:                 # jeden druh (nebo formy se stejnými staty)
+    if len(kinds) == 1:                 # one species (or forms with the same stats)
         return fits[0]
     return None, None
 
 
 def max_cp(sid, iv):
-    """Max CP poslední evoluce na úrovni 50 (dílek šablony cpMax)."""
+    """Max CP of the last evolution at level 50 (the cpMax template chip)."""
     return cp_of(SPECIES[final_evolution(sid, iv)]["stats"], iv, _cpm_at(MAX_LEVEL))
 
 
 def iv_fits(name, types, cp, hp, iv, family_hint=None, max_species=3):
-    """Sedí IV přesně na CP a HP kusu pro nějakou úroveň? Druh podle jména, typů a cukru – jen když
-    zbyde pár druhů (u neznámé přezdívky by mohla sednout náhoda). Bary appraisalu v půlce animace
-    na CP i HP skoro nikdy nesednou."""
+    """Do the IV fit the Pokémon's CP and HP exactly at some level? Species by name, types and candy – only
+    when just a few species are left (with an unknown nickname a match could be chance). Appraisal bars
+    caught mid-animation almost never fit both CP and HP."""
     if not (cp and hp and iv):
         return False
     cands = list(NAME_INDEX.get(alnum(name or "")) or [])
@@ -165,7 +166,7 @@ def iv_fits(name, types, cp, hp, iv, family_hint=None, max_species=3):
 
 @lru_cache(maxsize=None)
 def _league_products(sid, cap):
-    """Součin statů pro všech 4096 IV na nejvyšší úrovni (≤ 50), kde CP nepřesáhne limit; -1 = nevejde se."""
+    """Stat product for all 4096 IVs at the highest level (≤ 50) where CP stays within the cap; -1 = doesn't fit."""
     st = SPECIES[sid]["stats"]
     a = st[0] + IV_GRID[:, 0]
     d = st[1] + IV_GRID[:, 1]
@@ -179,9 +180,9 @@ def _league_products(sid, cap):
 
 
 def league_rank(sid, iv, league):
-    """Pořadí IV pro ligu (1 = nejlepší) poslední evoluce (při větvení té nejlepší): (pořadí, druh) nebo None.
-    Nižší stupně se nepočítají – Treecko s 15/15/15 nedosáhne 1500 CP ani na úrovni 50, takže by byl
-    „první“ ve všech ligách, i když se v nich hraje za Sceptile."""
+    """League IV rank (1 = best) of the last evolution (the best one when it branches): (rank, species) or None.
+    Lower stages are not ranked – Treecko with 15/15/15 doesn't reach 1500 CP even at level 50, so it would
+    be "first" in every league, even though it is played there as Sceptile."""
     cap = LEAGUES[league]
     k = iv[0] * 256 + iv[1] * 16 + iv[2]
     best = None
@@ -196,7 +197,7 @@ def league_rank(sid, iv, league):
 
 
 def info(sid, iv, level, cp_now):
-    """Všechno, co se o kusu dá spočítat (hodnoty pro šablonu jména i pro PvP tagy)."""
+    """Everything that can be computed about a Pokémon (values for the name template and for PvP tags)."""
     sp = SPECIES[sid]
     fin = final_evolution(sid, iv)
     fname = base_name(SPECIES[fin]["name"])
@@ -210,12 +211,12 @@ def info(sid, iv, level, cp_now):
 
 
 def iv_values(iv):
-    """Dílky šablony, které stačí znát z IV (bez druhu)."""
+    """Template chips that need only the IV (no species)."""
     return {"iv": str(round(sum(iv) * 100 / 45)), "ivs": f"{iv[0]}/{iv[1]}/{iv[2]}"}
 
 
 def chip_values(inf, iv):
-    """Hodnoty dílků šablony jména (klíče jako v aplikaci: iv, ivs, lvl, species, short, evo,
+    """Name template chip values (keys as in the app: iv, ivs, lvl, species, short, evo,
     cpEvo, cpMax, great, ultra, master)."""
     def rank(lg):
         r = inf["ranks"].get(lg)
@@ -226,12 +227,12 @@ def chip_values(inf, iv):
 
 
 SEPARATORS = {"space": " ", "dash": "-", "pipe": "|"}
-NAME_MAX = 12                                    # hra povolí max. 12 znaků
+NAME_MAX = 12                                    # the game allows at most 12 characters
 NEEDS_SPECIES = {"lvl", "species", "short", "evo", "cpEvo", "cpMax", "great", "ultra", "master"}
 
 
 def render_name(template, values, cut=True):
-    """Jméno podle šablony (dílky {"k": klíč, "v": vlastní text}); delší než 12 znaků se ořízne."""
+    """Name from the template (chips {"k": key, "v": custom text}); anything over 12 characters is cut."""
     out = "".join(SEPARATORS[t["k"]] if t.get("k") in SEPARATORS else
                   str(t.get("v") or "") if t.get("k") == "text" else values.get(t.get("k"), "")
                   for t in template)

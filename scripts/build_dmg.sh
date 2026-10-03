@@ -1,10 +1,10 @@
 #!/bin/bash
 # =====================================================================
-#  Sestaví instalační disk dist/IVory.dmg (stálý název – odkaz
-#  …/releases/latest/download/IVory.dmg v README tak vede vždy na nejnovější):
-#  IVory.app + zástupce složky Aplikace na pozadí s šipkou a návodem.
-#  Aplikace v DMG nic nepřibaluje – Node.js, Appium a Python si stáhne
-#  sama při prvním spuštění (scripts/run.sh).
+#  Builds the installer disk dist/IVory.dmg (fixed name, so the link
+#  …/releases/latest/download/IVory.dmg in the README always gets the newest one):
+#  IVory.app + an Applications folder shortcut on a background with an arrow and instructions.
+#  The app in the DMG bundles nothing: it downloads Node.js, Appium and Python
+#  by itself on the first start (scripts/run.sh).
 #
 #    bash scripts/build_dmg.sh
 # =====================================================================
@@ -16,14 +16,14 @@ DMG="$ROOT/dist/IVory.dmg"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# aplikace se sestaví bokem – z dist/IVory.app může zrovna běžet třídění
+# build the app elsewhere: a run may be sorting from dist/IVory.app right now
 DIST="$WORK" bash "$ROOT/app/build_app.sh"
 
 echo "▶ Kreslím pozadí DMG..."
 swift "$ROOT/app/dmg/background.swift" "$WORK"
 tiffutil -cathidpicheck "$WORK/background.png" "$WORK/background@2x.png" -out "$WORK/background.tiff" >/dev/null 2>&1
 
-# dmgbuild nastaví pozadí a rozložení okna bez ovládání Finderu
+# dmgbuild sets the background and the window layout without scripting Finder
 TOOLS="$ROOT/build/dmg-tools"
 if [ ! -x "$TOOLS/bin/dmgbuild" ]; then
   echo "▶ Instaluji dmgbuild (jen poprvé)..."

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Spuštění z Finderu dvojklikem (bez aplikace). Parametry viz scripts/run.sh.
+# Start by double-clicking in Finder (without the app). For the options see scripts/run.sh.
 cd "$(dirname "$0")" || exit 1
 bash scripts/run.sh "$@"
 echo

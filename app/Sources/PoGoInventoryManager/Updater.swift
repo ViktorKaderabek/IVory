@@ -2,10 +2,10 @@ import AppKit
 import CryptoKit
 import Foundation
 
-/// Aktualizace z GitHub Releases: při spuštění (a pak jednou za 24 h, když je zapnuté „Kontrolovat
-/// automaticky“) se podívá na poslední vydání. Novou verzi stáhne až na pokyn uživatele, ověří
-/// otisk SHA-256 a po „Restartovat“ vymění aplikaci za novou a znovu ji spustí.
-/// Nikdy nic nespustí sama a během třídění restart nejde.
+/// Updates from GitHub Releases: at launch (and then once every 24 h while "Check automatically" is on)
+/// it looks up the latest release. It downloads a new version only when the user asks, verifies the
+/// SHA-256 checksum (when the release provides one) and, after "Restart", replaces the app with the new
+/// one and relaunches it. It never installs anything on its own, and restarting is not possible while sorting.
 @MainActor
 final class Updater: ObservableObject {
     static let shared = Updater()
@@ -31,9 +31,9 @@ final class Updater: ObservableObject {
     }
 
     @Published private(set) var state = State.idle
-    /// Křížek v banneru: schová ho do příštího spuštění (novou verzi pak připomene jen nastavení).
+    /// The banner's close button: hides it until the next launch (until then, only the settings mention the new version).
     @Published var bannerHidden = false
-    /// Banner chyby jen po akci uživatele (stažení, instalace); chyba automatické kontroly je jen v nastavení.
+    /// Error banner only after a user action (download, install); a failed automatic check shows only in the settings.
     @Published private(set) var showErrorBanner = false
     @Published private(set) var lastCheck: Date? = UserDefaults.standard.object(forKey: "updateLastCheck") as? Date
 
@@ -50,9 +50,9 @@ final class Updater: ObservableObject {
         }
     }
 
-    // MARK: - Kontrola
+    // MARK: - Checking
 
-    /// Při spuštění aplikace: zkontrolovat hned a pak každou hodinu ověřit, jestli neuběhlo 24 h.
+    /// At app launch: check right away, then every hour see whether 24 h have passed.
     func start(automatic: @escaping () -> Bool) {
         #if DEBUG
         if applyPreview() { return }
@@ -94,7 +94,7 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Poslední vydání z GitHubu. Žádné vydání (404) = není co aktualizovat.
+    /// The latest release from GitHub. No release (404) = nothing to update.
     private static func fetchLatest() async throws -> Release? {
         #if DEBUG
         if let feed = ProcessInfo.processInfo.environment["IVORY_UPDATE_FEED"] {
@@ -123,7 +123,7 @@ final class Updater: ObservableObject {
         return Release(version: version, notesURL: latest.html_url, dmgURL: asset.browser_download_url, sha256: sha)
     }
 
-    /// 1.10.0 > 1.9.2 (porovnává čísla, ne text).
+    /// 1.10.0 > 1.9.2 (compares numbers, not text).
     static func isNewer(_ a: String, than b: String) -> Bool {
         let pa = a.split(separator: ".").map { Int($0) ?? 0 }, pb = b.split(separator: ".").map { Int($0) ?? 0 }
         for i in 0..<max(pa.count, pb.count) {
@@ -133,7 +133,7 @@ final class Updater: ObservableObject {
         return false
     }
 
-    // MARK: - Stažení
+    // MARK: - Download
 
     func download() {
         guard let release, downloadTask == nil else { return }
@@ -176,7 +176,7 @@ final class Updater: ObservableObject {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("IVory")
     }
 
-    /// Stáhne soubor s průběhem (0…1) do ~/Library/Caches/IVory.
+    /// Downloads the file to ~/Library/Caches/IVory, reporting progress (0…1).
     private static func fetch(_ url: URL, version: String, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let target = cacheDir.appendingPathComponent("IVory-\(version).dmg")
@@ -207,10 +207,11 @@ final class Updater: ObservableObject {
         return target
     }
 
-    // MARK: - Instalace a restart
+    // MARK: - Install and restart
 
-    /// Připraví novou aplikaci vedle staré, ukončí se a malý skript je po ukončení prohodí a novou spustí.
-    /// Když do složky s aplikací nejde zapisovat (nebo běží z DMG), otevře DMG k ruční instalaci.
+    /// Stages the new app next to the old one and quits; once it has quit, a small script swaps the two
+    /// and launches the new one. If the app's folder isn't writable (or the app runs from the DMG),
+    /// it opens the DMG for a manual install.
     func installAndRestart() {
         guard case .ready(let release, let dmg) = state else { return }
         guard !Runner.shared.isRunning else { return }
@@ -246,12 +247,12 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Připojí DMG, zkontroluje, že v něm je IVory, a zkopíruje ji vedle staré aplikace.
+    /// Mounts the DMG, checks that it contains IVory and copies it next to the old app.
     private static func stage(dmg: URL, next: URL) throws -> URL {
         let mount = FileManager.default.temporaryDirectory.appendingPathComponent("ivory-update-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
         try run("/usr/bin/hdiutil", ["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mount.path, dmg.path])
-        defer { try? run("/usr/bin/hdiutil", ["detach", mount.path, "-quiet", "-force"]) }
+        defer { _ = try? run("/usr/bin/hdiutil", ["detach", mount.path, "-quiet", "-force"]) }
         let app = mount.appendingPathComponent("IVory.app")
         guard Bundle(url: app)?.bundleIdentifier == Bundle.main.bundleIdentifier else { throw UpdateError.badPackage }
         try? FileManager.default.removeItem(at: next)
@@ -291,13 +292,13 @@ final class Updater: ObservableObject {
         }
     }
 
-    // MARK: - Náhled (jen pro kontrolu vzhledu)
+    // MARK: - Preview states (for checking the look only)
 
     #if DEBUG
-    /// IVORY_UPDATE_AUTO=1 (s IVORY_UPDATE_FEED): po kontrole sám stáhne a nainstaluje – test celé cesty.
+    /// IVORY_UPDATE_AUTO=1 (with IVORY_UPDATE_FEED): downloads and installs right after the check – an end-to-end test.
     private static var autoTest: Bool { ProcessInfo.processInfo.environment["IVORY_UPDATE_AUTO"] == "1" }
 
-    /// IVORY_UPDATE_STATE=available|downloading|ready|error nastaví ukázkový stav bez sítě.
+    /// IVORY_UPDATE_STATE=available|downloading|ready|error sets a sample state without any network access.
     private func applyPreview() -> Bool {
         guard let s = ProcessInfo.processInfo.environment["IVORY_UPDATE_STATE"] else { return false }
         let r = Release(version: "1.1.0", notesURL: URL(string: "https://github.com/\(Self.repo)/releases")!,

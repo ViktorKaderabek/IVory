@@ -2,9 +2,10 @@
 import AppKit
 import SwiftUI
 
-/// Jen pro README: `IVORY_SHOTS=<složka> PoGoInventoryManager` otevře okno s ukázkovými daty (nastavení
-/// se neukládá), projde stavy ve světlém i tmavém vzhledu a vyfotí okno i se stínem. Vlastní okno jde
-/// vyfotit i bez povolení k nahrávání obrazovky. IVORY_SHOTS_HEIGHT = výška okna (výchozí 1085).
+/// README only: `IVORY_SHOTS=<folder> PoGoInventoryManager` opens the window with sample data (settings
+/// aren't saved), goes through the states in light and dark appearance and captures the window with its shadow.
+/// The app's own window can be captured even without screen recording permission.
+/// IVORY_SHOTS_HEIGHT = window height (default 1085).
 @MainActor
 enum ShotSession {
     static let folder = ProcessInfo.processInfo.environment["IVORY_SHOTS"].map { URL(fileURLWithPath: $0) }
@@ -13,12 +14,12 @@ enum ShotSession {
     static let editorNote = Notification.Name("IVoryShotEditor")
     private static var started = false
 
-    /// Výchozí nastavení (bez UDID a Team ID), PvP tagy zapnuté, přejmenování vypnuté.
+    /// Default settings (no UDID or Team ID), PvP tags on, renaming off.
     static var demoConfig: AppConfig {
         var c = AppConfig()
         c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: false)
         c.language = ProcessInfo.processInfo.environment["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
-        // snímky bez okna se souhlasem; IVORY_SHOTS_CONSENT=1 nafotí okno se souhlasem
+        // shots without the consent window; IVORY_SHOTS_CONSENT=1 captures the consent window
         c.consentVersion = ProcessInfo.processInfo.environment["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
         return c
     }
@@ -66,7 +67,7 @@ enum ShotSession {
             shot([win], folder, "running-\(name)")
 
             runner.applyPreview("done")
-            await pause(4.0)   // konfety doběhnou
+            await pause(4.0)   // let the confetti finish
             shot([win], folder, "done-\(name)")
 
             place(win, NSSize(width: size.width + 400, height: size.height))
@@ -85,7 +86,8 @@ enum ShotSession {
         defaults.set(savedSections, forKey: "settingsOpenSections")
     }
 
-    /// Okno smí být vyšší než obrazovka (jinak ho macOS zmenší a spodek obsahu se nevyfotí).
+    /// Lets the window be taller than the screen (otherwise macOS shrinks it and the bottom of the content
+    /// isn't captured).
     private static func allowTallWindow(_ win: NSWindow) {
         let cls: AnyClass = type(of: win)
         let sel = #selector(NSWindow.constrainFrameRect(_:to:))
@@ -98,8 +100,8 @@ enum ShotSession {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
-    /// Okno do levého horního rohu obrazovky s nejvyšším rozlišením (Retina = ostré snímky);
-    /// co se nevejde, přesahuje dolů (vyfotí se celé).
+    /// Puts the window in the top-left corner of the screen with the highest resolution (Retina = sharp shots);
+    /// whatever doesn't fit extends below the screen (it is still captured whole).
     private static func place(_ win: NSWindow, _ size: NSSize) {
         let sharpest = NSScreen.screens.max { $0.backingScaleFactor < $1.backingScaleFactor }
         let screen = sharpest?.visibleFrame ?? win.screen?.visibleFrame ?? .zero
@@ -118,7 +120,8 @@ enum ShotSession {
         print("✔ \(name) \(image.width)×\(image.height)")
     }
 
-    /// CGWindowListCreateImage(FromArray) je v novém SDK „obsoleted“, za běhu ale funguje – volá se přes dlsym.
+    /// CGWindowListCreateImage(FromArray) is "obsoleted" in the new SDK but still works at runtime,
+    /// so it's called via dlsym.
     private static func capture(_ ids: [CGWindowID]) -> CGImage? {
         let handle = UnsafeMutableRawPointer(bitPattern: -2)   // RTLD_DEFAULT
         let options = CGWindowImageOption.bestResolution.rawValue

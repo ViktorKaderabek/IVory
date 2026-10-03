@@ -1,6 +1,6 @@
 import Foundation
 
-/// Pomocníci pro nastavení: najít připojený iPhone a Apple Team ID.
+/// Helpers for settings: find the connected iPhone and the Apple Team ID.
 enum DeviceTools {
     struct Device: Identifiable, Hashable {
         let name: String
@@ -9,7 +9,7 @@ enum DeviceTools {
         var id: String { udid }
     }
 
-    /// Připojené iPhony (ne simulátory) podle `xcrun xctrace list devices`.
+    /// Connected iPhones (not simulators), from `xcrun xctrace list devices`.
     static func connectedDevices() async -> [Device] {
         let output = await shell("xcrun xctrace list devices 2>/dev/null")
         var devices: [Device] = []
@@ -33,7 +33,7 @@ enum DeviceTools {
         return devices
     }
 
-    /// Team ID z certifikátu „Apple Development“ v Klíčence (pole OU).
+    /// Team ID from the "Apple Development" certificate in the Keychain (the OU field).
     static func teamId() async -> String? {
         let output = await shell(
             "security find-certificate -c 'Apple Development' -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null")

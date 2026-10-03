@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Stav, který ukazuje hero karta.
+/// The state the hero card shows.
 enum HeroState: Equatable {
     case ready, running, done, stopped, error
 
@@ -15,7 +15,7 @@ enum HeroState: Equatable {
     }
 }
 
-/// Velká karta nahoře: stav, co se právě děje, a hlavní tlačítko. V obou režimech tmavá.
+/// The big card at the top: the state, what is happening right now, and the main button. Dark in both modes.
 struct HeroCard: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
@@ -92,7 +92,7 @@ struct HeroCard: View {
         .foregroundStyle(Theme.white)
         .background(HeroBackground(state: state, reduceMotion: reduceMotion))
         .overlay(alignment: .top) {
-            // světlá hrana nahoře
+            // light edge at the top
             LinearGradient(stops: [
                 .init(color: .clear, location: 0), .init(color: .white.opacity(0.35), location: 0.06),
                 .init(color: .white.opacity(0.35), location: 0.94), .init(color: .clear, location: 1),
@@ -151,7 +151,7 @@ struct HeroCard: View {
         }
     }
 
-    /// „Označím horší duplicity, roztřídím inventář do IV tagů, otaguji kusy pro PvP ligy a přejmenuji …“
+    /// "Tag worse duplicates, sort your storage into IV tags, tag Pokémon for PvP leagues and rename …"
     private func plan(_ c: AppConfig) -> String {
         let n = c.ivTags.filter { !$0.name.isEmpty }.count
         let range = pctRange(c.rename.min, c.rename.max)
@@ -179,7 +179,7 @@ struct HeroCard: View {
     }
 }
 
-/// Barvy hero karty (tmavé v obou režimech).
+/// Hero card colors (the card is dark in both modes).
 enum HeroPalette {
     static let green = Color.oklch(0.82, 0.17, 150)
     static let orange = Color.oklch(0.8, 0.14, 65)
@@ -187,7 +187,7 @@ enum HeroPalette {
     static let stopRed = Color.oklch(0.8, 0.14, 22)
 }
 
-/// Pilulka stavu: tečka (při běhu bliká) + text.
+/// Status pill: a dot (blinking during a run) + text.
 struct StatusPill: View {
     let state: HeroState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -236,7 +236,7 @@ struct StatusPill: View {
     }
 }
 
-/// Zaškrtávátko na tmavé kartě.
+/// A checkbox on the dark card.
 struct HeroCheckbox: View {
     @Binding var isOn: Bool
     let title: String
@@ -265,10 +265,10 @@ struct HeroCheckbox: View {
     }
 }
 
-// MARK: - Pozadí se světly
+// MARK: - Background with lights
 
-/// Tři rozostřená světla, která plují. Při běhu zrychlí (16 s → 5 s), při zastavení zmrznou.
-/// Animuje je Core Animation (HeroLights), aplikace mezi snímky nic nepočítá.
+/// Three blurred drifting lights. They speed up during a run (16 s → 5 s) and freeze when stopped.
+/// Core Animation animates them (HeroLights), so the app computes nothing between frames.
 struct HeroBackground: View {
     let state: HeroState
     let reduceMotion: Bool
@@ -304,9 +304,9 @@ struct HeroBackground: View {
     }
 }
 
-// MARK: - Hlavní tlačítko
+// MARK: - Main button
 
-/// Kulaté tlačítko: Spustit (dýchá), během běhu Zastavit s točícím se obloukem a radarovými vlnami.
+/// Round button: Start (breathing); during a run, Stop with a spinning arc and radar ripples.
 struct StartButton: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
@@ -333,7 +333,7 @@ struct StartButton: View {
             .contentShape(Circle())
         }
         .buttonStyle(PressableStyle())
-        .keyboardShortcut(pageActive ? .defaultAction : nil)   // na skryté obrazovce Enter nic nespustí
+        .keyboardShortcut(pageActive ? .defaultAction : nil)   // on a hidden screen, Enter starts nothing
         .onHover { h in withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { hovering = h } }
         .animation(.spring(response: 0.4, dampingFraction: 0.75), value: runner.isRunning)
         .help(runner.isRunning ? tr("Zastavit (výsledky se uloží)", "Stop (results are saved)") : tr("Spustit (Enter)", "Start (Enter)"))
@@ -369,7 +369,7 @@ struct StartButton: View {
         }
     }
 
-    /// Kruhy kolem tlačítka (animuje je Core Animation, viz StartRings).
+    /// Rings around the button (animated by Core Animation, see StartRings).
     private var rings: some View {
         ZStack {
             if !runner.isRunning {
@@ -381,9 +381,9 @@ struct StartButton: View {
     }
 }
 
-// MARK: - Konfety po dokončení
+// MARK: - Confetti when finished
 
-/// Konfety v barvách IV tagů přes celé okno, 3 s.
+/// Confetti in the IV tag colors over the whole window, 3 s.
 struct ConfettiView: View {
     let start: Date
     private let pieces = (0..<80).map(Piece.init)

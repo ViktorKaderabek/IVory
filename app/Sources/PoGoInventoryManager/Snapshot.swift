@@ -2,8 +2,8 @@
 import AppKit
 import SwiftUI
 
-/// Jen pro kontrolu vzhledu bez okna: `PoGoInventoryManager --snapshot <složka>` vykreslí hlavní okno,
-/// nastavení a editor šablony do PNG (světlý i tmavý vzhled). Nastavení se neukládá.
+/// Only for checking the look without a window: `PoGoInventoryManager --snapshot <folder>` renders the main window,
+/// the settings, the Stats screen and the template editor to PNG (light and dark appearance). Settings aren't saved.
 enum SnapshotExport {
     @MainActor static func run(to folder: String) -> Int32 {
         let dir = URL(fileURLWithPath: folder)
@@ -58,7 +58,7 @@ enum SnapshotExport {
     }
 }
 
-/// Hlavní okno bez lišty a panelu nastavení (ty ImageRenderer nevykreslí).
+/// The main window without the toolbar and the settings panel (ImageRenderer can't render those).
 private struct SnapshotMain: View {
     var body: some View {
         MainColumn(fresh: .constant(false))

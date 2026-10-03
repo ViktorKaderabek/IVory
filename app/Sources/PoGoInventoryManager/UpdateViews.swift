@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Banner nad hero kartou: nová verze, stahování, připraveno k restartu, chyba.
+/// Banner above the hero card: new version, downloading, ready to restart, error.
 struct UpdateBanner: View {
     @ObservedObject private var updater = Updater.shared
     @EnvironmentObject private var runner: Runner
@@ -147,7 +147,7 @@ struct UpdateBanner: View {
     }
 }
 
-/// Karta nahoře v nastavení: jazyk a aktualizace. Jazyk jde měnit i během běhu.
+/// Card at the top of the settings: language and updates. The language can be changed even during a run.
 struct LanguageUpdateCard: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner

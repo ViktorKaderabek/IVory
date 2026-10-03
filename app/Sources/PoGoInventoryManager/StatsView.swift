@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// Obrazovka Statistiky („Co IVory zná“): Pokédex, IV a hundo nahoře, síň slávy PvP, pak menší karty.
-/// Kde číslo stojí na neúplných datech, karta říká, z kolika kusů je spočítané.
+/// The Stats screen ("What IVory knows"): Pokédex, IVs and hundos on top, the PvP hall of fame, then smaller cards.
+/// Where a number rests on incomplete data, the card says how many entries it was computed from.
 struct StatsView: View {
     @EnvironmentObject private var store: ConfigStore
     @ObservedObject private var statsStore = StatsStore.shared
     private let preloaded: InventoryStats?
-    /// Prázdný stav: přepne na přehled a spustí běh s kroky z přehledu.
+    /// Empty state: switches to the overview and starts a run with the steps selected there.
     var startRun: () -> Void
 
-    /// `preloaded` jen pro snímky bez okna (tam se nic nenačítá).
+    /// `preloaded` is only for windowless snapshots (nothing gets loaded there).
     init(preloaded: InventoryStats? = nil, startRun: @escaping () -> Void) {
         self.preloaded = preloaded
         self.startRun = startRun
@@ -118,9 +118,9 @@ private func share(_ part: Int, _ whole: Int) -> Int {
     whole > 0 ? Int((Double(part) / Double(whole) * 100).rounded()) : 0
 }
 
-// MARK: - Karty
+// MARK: - Cards
 
-/// Karta statistiky: ikona, nadpis, vpravo drobný údaj (z kolika kusů), pod tím obsah.
+/// Stat card: icon, title, a small note on the right (how many entries it covers), content below.
 private struct StatCard<Content: View>: View {
     let symbol: String
     let title: String
@@ -150,7 +150,7 @@ private struct StatCard<Content: View>: View {
     }
 }
 
-/// Velké číslo s popiskem vedle.
+/// A big number with a caption next to it.
 private struct BigNumber: View {
     let value: String
     var caption: String? = nil
@@ -166,11 +166,11 @@ private struct BigNumber: View {
                 Text(caption).font(.system(size: 15)).foregroundStyle(Theme.muted).monospacedDigit()
             }
         }
-        .lineLimit(1)   // bez minimumScaleFactor: zmenšování písma se měří opakovaně a je drahé
+        .lineLimit(1)   // no minimumScaleFactor: shrinking the font is measured repeatedly and is expensive
     }
 }
 
-/// Vodorovný ukazatel (podíl, pruh v grafu).
+/// Horizontal meter (a share, or a bar in a chart).
 private struct Meter: View {
     let fraction: Double
     var height: CGFloat = 10
@@ -191,7 +191,7 @@ private struct Meter: View {
     }
 }
 
-/// Řádek grafu: popisek · pruh · číslo.
+/// Chart row: label · bar · number.
 private struct BarRow: View {
     let label: String
     let value: Int
@@ -283,7 +283,7 @@ private struct IVCard: View {
         }
     }
 
-    /// Barva IV tagu, do kterého spodek koše spadá (stejné barvy jako ve hře).
+    /// Color of the IV tag that the bin's lower bound falls into (the same colors as in the game).
     private func color(_ lower: Int) -> Color {
         let tag = ivTags.filter { !$0.name.isEmpty }.sorted { $0.min > $1.min }.first { $0.min <= max(lower, 1) }
         return (tag?.color ?? .gray).swatch
@@ -588,7 +588,7 @@ struct RunsCard: View {
         return parts.joined(separator: " · ")
     }
 
-    /// „dnes 14:32“, „včera 9:05“, jinak „2. 10. 21:16“.
+    /// "today 14:32", "yesterday 9:05", otherwise "2. 10. 21:16".
     static func when(_ date: Date) -> String {
         let cal = Calendar.current
         let time = date.formatted(.dateTime.hour().minute().locale(L10n.locale))
@@ -604,7 +604,7 @@ struct RunsCard: View {
     }
 }
 
-// MARK: - Prázdný stav
+// MARK: - Empty state
 
 private struct EmptyStats: View {
     let runs: Int
@@ -655,7 +655,7 @@ private struct EmptyStats: View {
             .frame(height: height)
     }
 
-    /// Šrafování obrysů karet (12 × 12 bodů, čára 1 bod).
+    /// Hatching for the card outlines (12 × 12 points, 1-point line).
     private static let hatch: NSImage = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
         NSColor.gray.withAlphaComponent(0.3).setStroke()
         let path = NSBezierPath()
@@ -666,11 +666,11 @@ private struct EmptyStats: View {
     }
 }
 
-// MARK: - Rozložení
+// MARK: - Layout
 
-/// Řádek karet v poměrech šířek (jako `grid-template-columns: 1.35fr 1fr 0.8fr`), všechny stejně vysoké.
-/// Když by nějaká karta byla užší než `minColumn`, karty se poskládají pod sebe.
-/// Změřené výšky si pamatuje pro danou šířku (SwiftUI se ptá několikrát za průchod).
+/// A row of cards with width ratios (like `grid-template-columns: 1.35fr 1fr 0.8fr`), all the same height.
+/// If any card would be narrower than `minColumn`, the cards stack vertically instead.
+/// Caches the measured heights for a given width (SwiftUI asks several times per layout pass).
 struct WeightedRow: Layout {
     var weights: [CGFloat]
     var spacing: CGFloat = 12
@@ -678,7 +678,7 @@ struct WeightedRow: Layout {
 
     struct Cache {
         var width: CGFloat = -1
-        var widths: [CGFloat]?        // nil = pod sebou
+        var widths: [CGFloat]?        // nil = stacked
         var heights: [CGFloat] = []
     }
 
@@ -711,7 +711,7 @@ struct WeightedRow: Layout {
         return CGSize(width: width, height: cache.heights.reduce(0, +) + spacing * CGFloat(max(0, cache.heights.count - 1)))
     }
 
-    // Zarovnání podle obsahu karet se nepoužívá; bez toho by se SwiftUI ptalo každé karty zvlášť.
+    // Alignment by card content isn't used; without these SwiftUI would query every card separately.
     func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
                            subviews: Subviews, cache: inout Cache) -> CGFloat? { nil }
     func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
@@ -735,10 +735,10 @@ struct WeightedRow: Layout {
     }
 }
 
-// MARK: - Typy
+// MARK: - Types
 
 enum PokeType {
-    /// Obvyklé barvy typů (jako v Pokédexu).
+    /// The usual type colors (as in the Pokédex).
     static func color(_ type: String) -> Color {
         let hex: [String: UInt32] = [
             "normal": 0xA8A77A, "fire": 0xEE8130, "water": 0x6390F0, "electric": 0xF7D02C, "grass": 0x7AC74C,

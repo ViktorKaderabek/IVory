@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Ikona aplikace (návrh „Monogram IV“): slonovinové „IV“ na nočním podkladu se třemi světly.
-/// Stejný view kreslí ikonu v okně i soubor AppIcon.icns (viz `IconExport`).
+/// App icon ("Monogram IV" design): an ivory "IV" on a night background with three lights.
+/// The same view draws the icon in the window and the AppIcon.icns file (see `IconExport`).
 struct AppIconView: View {
     var body: some View {
         GeometryReader { geo in
@@ -32,7 +32,7 @@ struct AppIconView: View {
             .clipShape(shape)
             .overlay(shape.strokeBorder(.white.opacity(0.10), lineWidth: max(0.5, s * 0.0015)))
             .overlay(alignment: .top) {
-                // jemná horní hrana
+                // subtle top edge
                 shape.stroke(.white.opacity(0.24), lineWidth: max(0.5, s * 0.003))
                     .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.08)))
             }
@@ -42,19 +42,19 @@ struct AppIconView: View {
         .aspectRatio(1, contentMode: .fit)
     }
 
-    /// Rozostřené světlo; x, y je střed v podílu velikosti těla ikony.
+    /// A blurred light; x, y is its center as a fraction of the icon body size.
     private func light(_ color: Color, size: CGFloat, x: CGFloat, y: CGFloat, blur: CGFloat, opacity: Double, of body: CGFloat) -> some View {
         Circle()
             .fill(color)
             .frame(width: body * size, height: body * size)
-            .blur(radius: body / 0.8046 * blur)  // v návrhu je rozostření v % celé ikony
+            .blur(radius: body / 0.8046 * blur)  // the design gives the blur in % of the whole icon
             .opacity(opacity)
             .position(x: body * x, y: body * y)
             .frame(width: body, height: body)
     }
 }
 
-/// `IVory --export-icon <složka.iconset>`: vykreslí ikonu ve všech velikostech pro iconutil.
+/// `IVory --export-icon <folder.iconset>`: renders the icon in every size for iconutil.
 @MainActor
 enum IconExport {
     static func run(to folder: String) -> Int32 {

@@ -1,16 +1,16 @@
 #!/bin/bash
 # =====================================================================
-#  IVory – spouštěč
-#  Zkontroluje Xcode, při prvním spuštění stáhne a připraví vše ostatní
-#  (Node.js, Appium + XCUITest driver, Python s knihovnami), spustí Appium
-#  server a bota. Používá ho aplikace i Terminál.
+#  IVory – launcher
+#  Checks Xcode, downloads and sets up everything else on the first run
+#  (Node.js, Appium + XCUITest driver, Python with libraries), starts the
+#  Appium server and the bot. Used by both the app and Terminal.
 #
-#    bash scripts/run.sh                                   # duplicity + IV tagy
-#    bash scripts/run.sh --steps duplicates,iv,pvp,rename  # libovolné kroky
-#    bash scripts/run.sh --fresh                           # IV z paměti nepoužívat
+#    bash scripts/run.sh                                   # duplicates + IV tags
+#    bash scripts/run.sh --steps duplicates,iv,pvp,rename  # any steps
+#    bash scripts/run.sh --fresh                           # don't use IVs from memory
 #
-#  Co v systému chybí, stáhne do ~/.pogo/runtime (bez Homebrew, bez hesla).
-#  Nainstalovaný Node.js / Appium z Homebrew použije, když už je.
+#  Whatever the system lacks is downloaded into ~/.pogo/runtime (no Homebrew, no password).
+#  Node.js / Appium installed from Homebrew are used when they are already there.
 # =====================================================================
 set -u
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -26,7 +26,7 @@ VENV="$WORK/venv"
 PORT=4723
 mkdir -p "$WORK"
 
-# Verze stahované při prvním spuštění (stejné jako ve scripts/build_runtime.sh)
+# Versions downloaded on the first run (the same as in scripts/build_runtime.sh)
 NODE_VERSION=24.21.0
 PY_RELEASE=20261001
 PY_VERSION=3.12.15
@@ -45,8 +45,8 @@ case "$(uname -m)" in
     PY_SHA=d101ac54bc34afff54741406261325dc896b7b646a36a58fff4845ef0a00b2ce ;;
 esac
 
-# Jazyk hlášek podle nastavení aplikace (config.json „language“)
-# (bez nastavení podle jazyka systému, stejně jako aplikace)
+# Message language from the app settings (config.json "language");
+# without that setting, the system language, just like the app
 UI_LANG=en
 if grep -Eq '"language"[[:space:]]*:' "$WORK/config.json" 2>/dev/null; then
   grep -Eq '"language"[[:space:]]*:[[:space:]]*"cs"' "$WORK/config.json" && UI_LANG=cs
@@ -57,7 +57,7 @@ t() { if [ "$UI_LANG" = cs ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; 
 say() { printf '\n▶ %s\n' "$*"; }
 die() { printf '\n✖ %s\n' "$*"; exit 1; }
 
-fetch() {  # fetch URL SOUBOR SHA256 – stáhne do ~/.pogo/runtime/downloads a ověří otisk
+fetch() {  # fetch URL FILE SHA256 – downloads into ~/.pogo/runtime/downloads and verifies the checksum
   local url="$1" file="$RT/downloads/$2" sha="$3"
   mkdir -p "$RT/downloads"
   if [ -f "$file" ] && [ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$sha" ]; then return 0; fi
@@ -69,16 +69,16 @@ fetch() {  # fetch URL SOUBOR SHA256 – stáhne do ~/.pogo/runtime/downloads a 
   mv "$file.part" "$file"
 }
 
-unpack() {  # unpack ARCHIV CÍL SLOŽKA_V_ARCHIVU – rozbalí do ~/.pogo/runtime/CÍL
+unpack() {  # unpack ARCHIVE TARGET DIR_IN_ARCHIVE – extracts into ~/.pogo/runtime/TARGET
   local tmp="$RT/$2.tmp"
   rm -rf "$tmp" "$RT/$2" && mkdir -p "$tmp"
   tar -xzf "$RT/downloads/$1" -C "$tmp" || die "$(t "Rozbalení $1 selhalo." "Unpacking $1 failed.")"
   mv "$tmp/$3" "$RT/$2" && rm -rf "$tmp" "$RT/downloads/$1"
 }
 
-# --- 1) Xcode (jediné, co stáhnout nejde) --------------------------------
+# --- 1) Xcode (the only thing that can't be downloaded) -------------------
 if ! xcodebuild -version >/dev/null 2>&1; then
-  # Xcode je nainstalovaný, ale vybrané jsou jen Command Line Tools – použít ho bez sudo
+  # Xcode is installed but only the Command Line Tools are selected: use it without sudo
   for x in /Applications/Xcode.app /Applications/Xcode-beta.app; do
     [ -d "$x/Contents/Developer" ] && export DEVELOPER_DIR="$x/Contents/Developer" && break
   done
@@ -90,8 +90,8 @@ xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || die "$(t \
   "Xcode ještě není připravený: otevři ho jednou, nech doinstalovat součásti a pak spusť IVory znovu." \
   "Xcode isn't set up yet: open it once, let it install its components, then start IVory again.")"
 
-# --- 1b) souhlas s upozorněním na rizika (sdílený s oknem v aplikaci) -----
-CONSENT_VERSION=1   # stejné číslo jako Consent.version v app/Sources/PoGoInventoryManager/Consent.swift
+# --- 1b) Consent to the risk notice (shared with the window in the app) ---
+CONSENT_VERSION=1   # same number as Consent.version in app/Sources/PoGoInventoryManager/Consent.swift
 CFG="$WORK/config.json"
 HAVE="$(xcrun python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("consent_version") or 0))' "$CFG" 2>/dev/null || echo 0)"
 if [ "$HAVE" -lt "$CONSENT_VERSION" ]; then
@@ -155,7 +155,7 @@ PY
   say "$(t "Souhlas uložen." "Consent saved.")"
 fi
 
-# --- 2) Node.js a Appium -------------------------------------------------
+# --- 2) Node.js and Appium -----------------------------------------------
 [ -x "$RT/node/bin/node" ] && export PATH="$RT/node/bin:$PATH"
 own_node() {
   if [ ! -x "$RT/node/bin/node" ]; then
@@ -166,7 +166,7 @@ own_node() {
   export PATH="$RT/node/bin:$PATH"
 }
 if ! command -v appium >/dev/null 2>&1; then
-  # Appium 3 chce Node 20+ a globální instalaci do složky, kam smí zapisovat
+  # Appium 3 needs Node 20+ and a global install into a folder it may write to
   if ! command -v npm >/dev/null 2>&1 \
      || ! node -e 'process.exit(+process.versions.node.split(".")[0] >= 20 ? 0 : 1)' 2>/dev/null \
      || [ ! -w "$(npm prefix -g 2>/dev/null)/lib" ]; then
@@ -181,7 +181,7 @@ if ! appium driver list --installed 2>&1 | grep -qi xcuitest; then
     || die "$(t "Instalace XCUITest driveru selhala." "Installing the XCUITest driver failed.")"
 fi
 
-# --- 3) Python prostředí ---------------------------------------------
+# --- 3) Python environment -----------------------------------------------
 if [ ! -x "$VENV/bin/python" ]; then
   if [ ! -x "$RT/python/bin/python3" ]; then
     say "$(t "Stahuji Python $PY_VERSION (jen poprvé)..." "Downloading Python $PY_VERSION (first run only)...")"
@@ -199,7 +199,7 @@ if ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation" 
     || die "$(t "Instalace Python knihoven selhala." "Installing the Python libraries failed.")"
 fi
 
-# --- 4) Appium server --------------------------------------------------
+# --- 4) Appium server ----------------------------------------------------
 APPIUM_PID=""
 cleanup() { [ -n "$APPIUM_PID" ] && kill "$APPIUM_PID" 2>/dev/null; }
 trap cleanup EXIT
@@ -216,12 +216,12 @@ else
   done
 fi
 
-# --- 5) bot --------------------------------------------------------------
+# --- 5) Bot --------------------------------------------------------------
 say "$(t "Spouštím IVory (Stop / Ctrl+C běh ukončí a uloží výsledky)." "Starting IVory (Stop / Ctrl+C ends the run and saves the results).")"
 "$VENV/bin/python" "$CORE/pogo_bot.py" "$@" &
 PY_PID=$!
 trap 'kill -INT "$PY_PID" 2>/dev/null' INT TERM
 wait "$PY_PID"; RC=$?
-# po Stop se wait vrátí dřív – počkat, až bot uloží výsledky
+# after Stop, wait returns early: keep waiting until the bot has saved the results
 while kill -0 "$PY_PID" 2>/dev/null; do wait "$PY_PID"; RC=$?; done
 exit $RC

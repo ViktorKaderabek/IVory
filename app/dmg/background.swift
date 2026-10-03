@@ -1,6 +1,6 @@
-// Nakreslí pozadí okna instalačního DMG (660 × 420 bodů, 1× a 2×).
-//   swift app/dmg/background.swift <cílová složka>
-// Výsledek (background.png a background@2x.png) spojí scripts/build_dmg.sh do jednoho TIFF.
+// Draws the background of the installer DMG window (660 × 420 points, 1× and 2×).
+//   swift app/dmg/background.swift <output folder>
+// scripts/build_dmg.sh merges the result (background.png and background@2x.png) into one TIFF.
 import AppKit
 
 let size = NSSize(width: 660, height: 420)
@@ -35,7 +35,7 @@ func render(scale: CGFloat) -> NSBitmapImageRep {
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 
-    // podklad jako v banneru README: jemný fialovo-modrý přechod
+    // background as in the README banner: a subtle violet-to-blue gradient
     NSGradient(colors: [NSColor(srgbRed: 0xe7 / 255.0, green: 0xe5 / 255.0, blue: 0xfe / 255.0, alpha: 1),
                         NSColor(srgbRed: 0xee / 255.0, green: 0xf0 / 255.0, blue: 0xfa / 255.0, alpha: 1)])!
         .draw(in: NSRect(origin: .zero, size: size), angle: -35)
@@ -45,7 +45,7 @@ func render(scale: CGFloat) -> NSBitmapImageRep {
     text("Drag IVory to Applications", size: 20, weight: .semibold, color: ink, centerX: 330, top: 38, width: 560)
     text("Přetáhni IVory do Aplikací", size: 13, weight: .regular, color: muted, centerX: 330, top: 66, width: 560)
 
-    // šipka mezi ikonami (střed ikon: x 165 a 495, y 190 shora)
+    // arrow between the icons (icon centers: x 165 and 495, y 190 from the top)
     let y: CGFloat = 420 - 190
     let arrow = NSBezierPath()
     arrow.move(to: NSPoint(x: 262, y: y))
@@ -64,7 +64,7 @@ func render(scale: CGFloat) -> NSBitmapImageRep {
     head.lineJoinStyle = .round
     head.stroke()
 
-    // karta s návodem na první spuštění
+    // card with first-start instructions
     let card = NSRect(x: 40, y: 22, width: 580, height: 92)
     NSColor.white.withAlphaComponent(0.55).setFill()
     NSBezierPath(roundedRect: card, xRadius: 14, yRadius: 14).fill()

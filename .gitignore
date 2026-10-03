@@ -1,4 +1,4 @@
-# sestavená aplikace, přibalené nástroje (scripts/build_runtime.sh) a mezivýsledky Swiftu
+# built app, the runtime from scripts/build_runtime.sh and Swift build output
 dist/
 build/
 app/.build/
@@ -11,7 +11,7 @@ __pycache__/
 # macOS
 .DS_Store
 
-# osobní data a pracovní soubory (do repozitáře nepatří)
+# personal data and working files (they don't belong in the repository)
 pogo/
 *.pem
 config.json

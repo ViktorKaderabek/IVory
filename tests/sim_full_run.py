@@ -1,21 +1,17 @@
-"""Simulátor obou částí: duplicity -> Removable, pak celý box -> IV tagy (přes detail ≡ -> TAG)."""
+"""Simulator of both parts: duplicates -> Removable, then the whole storage -> IV tags (detail screen ≡ -> TAG)."""
 import io, os, sys, time, random
 os.environ["POGO_NO_STREAM"] = "1"
 import numpy as np
 from PIL import Image, ImageDraw
-import sys as _sys
-from pathlib import Path as _Path
-_sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "core"))
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-import pogo_bot as S
-import sim2
-from sim2 import F, W, H, draw_text_c, png, SPR, TYPES, COLS, ROW0, PITCH
+from support import S
+import sim_box
+from sim_box import F, W, H, draw_text_c, png, SPR, TYPES, COLS, ROW0, PITCH
 
 S.NAV_TIMEOUT = 60
-HEADER_ALL = Image.open(sim2.R + "20261002_161252/05_search_0.png").convert("RGB").crop((0, 0, W, int(0.215 * H)))
-HEADER_DUP = sim2.HEADER
-DETAIL = sim2.DETAIL
-REAL = {k: Image.open(sim2.R + v + ".png").convert("RGB") for k, v in {
+HEADER_ALL = Image.open(sim_box.R + "20261002_161252/05_search_0.png").convert("RGB").crop((0, 0, W, int(0.215 * H)))
+HEADER_DUP = sim_box.HEADER
+DETAIL = sim_box.DETAIL
+REAL = {k: Image.open(sim_box.R + v + ".png").convert("RGB") for k, v in {
     "map": "20261002_161252/01_map", "menu": "20261002_161252/02_menu", "search": "20261002_161252/07_search_check_0",
     "sort_menu": "20261002_161252/11_sort_check_0", "dmenu": "20261002_161252/17_menu_cp487_check_0",
     "intro": "20261002_161252/20_appraise_cp487_check_0", "transfer": "20261002_161252/36_tag_button_check_0",
@@ -34,11 +30,11 @@ def make_mons(seed):
                 if cp not in used: used.add(cp); break
             iv = tuple(rnd.randint(4, 15) for _ in range(3))
             mons.append({"sp": sp, "cp": cp, "iv": iv, "name": sp, "tags": set()})
-    # výchozí tagy: správný, špatný, dva IV tagy, jiný tag
-    mons[0]["tags"] = {S.iv_tag(mons[0]["iv"])}                       # správně otagovaný -> přeskočit
-    mons[4]["tags"] = {"MEGA"}                                          # jiný tag -> doplnit IV tag
-    mons[5]["tags"] = {"100% Perfect", "70-0% Garbage"}                 # dva IV tagy -> opravit
-    mons[13]["tags"] = {"PowerUp", "85-90% Great" if S.iv_tag(mons[13]["iv"]) != "85-90% Great" else "80-85% Good"}  # jeden špatný -> nechá být
+    # starting tags: correct, wrong, two IV tags, another tag
+    mons[0]["tags"] = {S.iv_tag(mons[0]["iv"])}                       # correctly tagged -> skip
+    mons[4]["tags"] = {"MEGA"}                                          # another tag -> add the IV tag
+    mons[5]["tags"] = {"100% Perfect", "70-0% Garbage"}                 # two IV tags -> fix
+    mons[13]["tags"] = {"PowerUp", "85-90% Great" if S.iv_tag(mons[13]["iv"]) != "85-90% Great" else "80-85% Good"}  # one wrong tag -> left as is
     return mons
 
 class Phone:
@@ -47,12 +43,12 @@ class Phone:
         self.state = "map"; self.filtered = False; self.off = 0.0; self.sel = set(); self.cur = None
         self.list_off = 0.0; self.checked = set(); self.list_targets = []; self.list_return = "grid"
         self.typed = ""; self.taps = 0; self.bad = []; self.events = []; self.created = 0
-        self.tag_names = OTHER_TAGS + [n for _, n in S.IV_TAGS]          # Removable zatím neexistuje
+        self.tag_names = OTHER_TAGS + [n for _, n in S.IV_TAGS]          # Removable does not exist yet
         class CE:
             def get_command(s, n): return ("POST", "/x")
             def add_command(s, *a): pass
         self.command_executor = CE()
-    # --- seznam, který box ukazuje
+    # --- the list the storage shows
     def shown(self):
         if not self.filtered: return list(range(len(self.mons)))
         cnt = {}
@@ -61,7 +57,7 @@ class Phone:
     def max_off(self):
         rows = (len(self.shown()) + 2) // 3
         return max(0.0, ROW0 + (rows - 1) * PITCH - 0.70)
-    # --- vykreslení
+    # --- drawing
     def render_grid(self, multi=False):
         img = Image.new("RGB", (W, H), (238, 248, 238)); d = ImageDraw.Draw(img)
         if self.filtered and 0.2 < 0.235 - self.off < 1:
@@ -90,7 +86,7 @@ class Phone:
         return img
     def render_detail(self):
         m = self.mons[self.cur]
-        img = sim2.render_detail({"cp": m["cp"], "name": m["name"], "sp": m["sp"]}); d = ImageDraw.Draw(img)
+        img = sim_box.render_detail({"cp": m["cp"], "name": m["name"], "sp": m["sp"]}); d = ImageDraw.Draw(img)
         d.rectangle([0, int(0.49 * H), W, int(0.53 * H)], fill=(255, 255, 255))
         x = 0.12
         for t in sorted(m["tags"]):
@@ -120,12 +116,12 @@ class Phone:
         if st == "grid": return png(self.render_grid())
         if st == "multi": return png(self.render_grid(True))
         if st == "detail": return png(self.render_detail())
-        if st == "bars": return png(sim2.render_bars(self.mons[self.cur]))
+        if st == "bars": return png(sim_box.render_bars(self.mons[self.cur]))
         if st == "taglist": return png(self.render_list())
         if st == "create":
-            import sim3; return png(sim3.render_create(self.typed))
+            import sim_new_tag; return png(sim_new_tag.render_create(self.typed))
         return png(REAL[st])
-    # --- ovládání
+    # --- controls
     def get_window_size(self): return {"width": 402, "height": 874}
     def update_settings(self, s): pass
     def query_app_state(self, b): return 4
@@ -202,24 +198,24 @@ class Phone:
         elif st == "detail":
             if near(.87, .94, .08, .04): self.state = "dmenu"
             elif near(.5, .94, .05, .03): self.state = "grid"
-            elif near(.5, .80, .45, .04): self.bad.append("EVOLVE řádek"); self.state = "evolve"
+            elif near(.5, .80, .45, .04): self.bad.append("EVOLVE row"); self.state = "evolve"
         elif st == "dmenu":
             if near(.67, .771, .3, .025): self.state = "intro"
             elif near(.73, .61, .3, .025): self.open_list([self.cur], "detail")
-            elif near(.66, .853, .3, .025): self.bad.append("TRANSFER v menu"); self.state = "transfer"
+            elif near(.66, .853, .3, .025): self.bad.append("TRANSFER in menu"); self.state = "transfer"
             elif near(.87, .94, .08, .04): self.state = "detail"
         elif st == "intro": self.state = "bars"
         elif st == "bars": self.state = "detail"
         elif st == "multi":
             if near(.5, .86, .43, .025): self.open_list(sorted(self.sel), "grid")
-            elif near(.5, .937, .45, .025): self.bad.append("TRANSFER v multiselectu"); self.state = "transfer"
+            elif near(.5, .937, .45, .025): self.bad.append("TRANSFER in multiselect"); self.state = "transfer"
             elif near(.107, .117, .06, .03): self.state, self.sel = "grid", set()
             else:
                 i = self.cell_at(x, y)
                 if i is not None: self.sel ^= {i}
         elif st == "transfer":
             if near(.5, .643, .2, .025): self.state = "multi" if self.sel else "grid"
-            elif near(.5, .566, .25, .03): self.bad.append("!!! POTVRZEN TRANSFER !!!")
+            elif near(.5, .566, .25, .03): self.bad.append("!!! TRANSFER CONFIRMED !!!")
         elif st == "taglist":
             if near(.5, .86, .2, .025): self.done_list(); return
             if near(.5, .94, .05, .03): self.state = self.list_return if self.list_return == "detail" else "multi"; return
@@ -236,14 +232,14 @@ class Phone:
 def run(seed=11, glitch=0.0, verbose=False):
     mons = make_mons(seed); init = [set(m["tags"]) for m in mons]
     phone = Phone(mons, seed, glitch)
-    run_dir = sim2.TMP / f"run4_{seed}_{glitch}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
+    run_dir = sim_box.TMP / f"run4_{seed}_{glitch}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     if not verbose: S.log = lambda msg="": None
-    bot = S.Bot(phone, run_dir); book, book2 = S.Book(), S.Book(); mem = S.Memory(sim2.TMP / f"pamet4_{seed}_{glitch}.json")
+    bot = S.Bot(phone, run_dir); book, book2 = S.Book(), S.Book(); mem = S.Memory(sim_box.TMP / f"memory4_{seed}_{glitch}.json")
     class A: max_groups = 0; fresh = False; only_iv = False; no_iv = False
     rep = S.Report(run_dir, 0); err = None; t0 = time.time()
     try: S.run(bot, book, book2, mem, A(), rep)
     except Exception as e: err = f"{type(e).__name__}: {e}"
-    # očekávání
+    # expectations
     ivnames = {n for _, n in S.IV_TAGS}
     by_sp = {}
     for i, m in enumerate(mons): by_sp.setdefault(m["sp"], []).append(i)
@@ -259,8 +255,8 @@ def run(seed=11, glitch=0.0, verbose=False):
         had = init[i] & ivnames
         want = had if len(had) == 1 else {S.iv_tag(m["iv"])}
         if m["tags"] & ivnames != want: bad_iv.append((i, m["sp"], m["iv"], sorted(init[i]), sorted(m["tags"])))
-    print(f"seed={seed} glitch={glitch}: chyba={err} | Removable špatně={bad_rem} | IV tagy špatně={bad_iv} | "
-          f"tag založen {phone.created}x | nebezpečné={phone.bad} | klepnutí={phone.taps} | události={phone.events[:6]} | {time.time()-t0:.0f}s")
+    print(f"seed={seed} glitch={glitch}: error={err} | Removable wrong={bad_rem} | IV tags wrong={bad_iv} | "
+          f"tag created {phone.created}x | dangerous={phone.bad} | taps={phone.taps} | events={phone.events[:6]} | {time.time()-t0:.0f}s")
 
 if __name__ == "__main__":
     run(11, 0.0, verbose="verbose" in sys.argv)

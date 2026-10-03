@@ -1,22 +1,18 @@
-"""Syntetický box se scrollováním: testuje průchod více obrazovkami, velkou skupinu,
-nepřesné posuny (setrvačnost), výpadky a restart. Kontroluje, že se otagují přesně ti správní."""
+"""Synthetic storage with scrolling: tests a pass over several screens, a large group,
+imprecise scrolls (inertia), glitches and restarts. Checks that exactly the right Pokémon get tagged."""
 import io, os, sys, time, random, tempfile, json
 os.environ["POGO_NO_STREAM"] = "1"
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import sys as _sys
-from pathlib import Path as _Path
-_sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "core"))
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-import pogo_bot as S
-import sim as SIM1
+from support import S
+import sim_navigation as SIM1
 
 R = os.environ.get("POGO_SCREENS", os.path.expanduser("~/Desktop/pogo_runs/")).rstrip("/") + "/"
-TMP = Path(tempfile.mkdtemp(prefix="pogo_sim2_"))
-S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "pamet.json"; S.OUT_DIR = TMP / "runs"
+TMP = Path(tempfile.mkdtemp(prefix="pogo_sim_box_"))
+S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "memory.json"; S.OUT_DIR = TMP / "runs"
 S.NAV_TIMEOUT = 60
-S.TAG_NAME = "toREmove"   # syntetický seznam tagů má tenhle název
+S.TAG_NAME = "toREmove"   # the synthetic tag list uses this name
 W, H = 1206, 2622
 PITCH, ROW0 = 0.1665, 0.274
 COLS = [0.18, 0.495, 0.81]
@@ -47,7 +43,7 @@ def make_box(seed):
             iv = tuple(rnd.randint(0, 15) for _ in range(3))
             name = sp if rnd.random() > 0.2 else f"Ma {rnd.randint(1000, 9999)}"
             mons.append({"id": len(mons), "sp": sp, "cp": cp, "iv": iv, "name": name, "tags": set()})
-    # dvojče se stejným CP i jménem (nejednoznačné) – horší IV
+    # a twin with the same CP and name (ambiguous), with worse IVs
     r = [m for m in mons if m["sp"] == "Rattata"]
     r[1]["cp"], r[1]["name"], r[2]["name"] = r[2]["cp"], "Rattata", "Rattata"
     r[1]["iv"], r[2]["iv"] = (1, 2, 3), (2, 1, 3)
@@ -228,23 +224,23 @@ class Phone:
         elif st == "detail":
             if near(0.87, 0.94, 0.08, 0.04): self.state = "dmenu"
             elif near(0.5, 0.94, 0.05, 0.03): self.state = "grid"
-            elif near(0.5, 0.80, 0.45, 0.04): self.bad.append("EVOLVE řádek"); self.state = "evolve"
+            elif near(0.5, 0.80, 0.45, 0.04): self.bad.append("EVOLVE row"); self.state = "evolve"
         elif st == "dmenu":
             if near(0.67, 0.771, 0.3, 0.025): self.state = "intro"
-            elif near(0.66, 0.853, 0.3, 0.025): self.bad.append("TRANSFER v menu"); self.state = "transfer"
+            elif near(0.66, 0.853, 0.3, 0.025): self.bad.append("TRANSFER in menu"); self.state = "transfer"
             elif near(0.87, 0.94, 0.08, 0.04): self.state = "detail"
         elif st == "intro": self.state = "bars"
         elif st == "bars": self.state = "detail"
         elif st == "multi":
             if near(0.5, 0.86, 0.43, 0.025): self.state, self.checked = "taglist", False
-            elif near(0.5, 0.937, 0.45, 0.025): self.bad.append("TRANSFER v multiselectu"); self.state = "transfer"
+            elif near(0.5, 0.937, 0.45, 0.025): self.bad.append("TRANSFER in multiselect"); self.state = "transfer"
             elif near(0.107, 0.117, 0.06, 0.03): self.state, self.sel = "grid", set()
             else:
                 m = self.cell_at(x, y)
                 if m is not None: self.sel ^= {m["id"]}
         elif st == "transfer":
             if near(0.5, 0.643, 0.2, 0.025): self.state = "multi" if self.sel else "grid"
-            elif near(0.5, 0.566, 0.25, 0.03): self.bad.append("!!! POTVRZEN TRANSFER !!!")
+            elif near(0.5, 0.566, 0.25, 0.03): self.bad.append("!!! TRANSFER CONFIRMED !!!")
         elif st == "taglist":
             if near(0.3, 0.742, 0.3, 0.025): self.checked = not self.checked
             elif near(0.5, 0.86, 0.2, 0.025):
@@ -254,7 +250,7 @@ class Phone:
             elif near(0.5, 0.94, 0.05, 0.03): self.state = "multi"
         elif st == "evolve":
             if near(0.5, 0.662, 0.2, 0.025): self.state = "detail"
-            elif near(0.5, 0.597, 0.2, 0.03): self.bad.append("!!! POTVRZEN EVOLVE !!!")
+            elif near(0.5, 0.597, 0.2, 0.03): self.bad.append("!!! EVOLVE CONFIRMED !!!")
 
 class Args: max_groups = 0; fresh = False; only_iv = False; no_iv = True
 
@@ -262,15 +258,15 @@ def run(seed=1, glitch=0.0, inertia=0.03, verbose=False):
     mons = make_box(seed); phone = Phone(mons, seed, glitch, inertia)
     run_dir = TMP / f"run_{seed}_{glitch}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     if not verbose: S.log = lambda msg="": None
-    bot = S.Bot(phone, run_dir); book = S.Book(); mem = S.Memory(TMP / f"pamet_{seed}_{glitch}.json")
+    bot = S.Bot(phone, run_dir); book = S.Book(); mem = S.Memory(TMP / f"memory_{seed}_{glitch}.json")
     rep = S.Report(run_dir, 0); t0 = time.time(); err = None
     try: S.run(bot, book, S.Book(), mem, Args(), rep)
     except Exception as e: err = f"{type(e).__name__}: {e}"
     tagged = {m["id"] for m in mons if m["tags"]}; exp = expected(mons)
     ivs_ok = all(any(tuple(r.iv) == m["iv"] for m in mons if m["cp"] == r.cp and S.names_ok(m["name"], r.name)) for r in book.recs if r.iv)
-    print(f"seed={seed} glitch={glitch} inertia={inertia}: chyba={err} | nebezpečné={phone.bad} | "
-          f"otagováno={len(tagged)} čekáno={len(exp)} rozdíl: navíc={sorted(tagged-exp)} chybí={sorted(exp-tagged)} | "
-          f"IV správně={ivs_ok} | klepnutí={phone.taps} | události={phone.events[:8]} | {time.time()-t0:.0f}s")
+    print(f"seed={seed} glitch={glitch} inertia={inertia}: error={err} | dangerous={phone.bad} | "
+          f"tagged={len(tagged)} expected={len(exp)} diff: extra={sorted(tagged-exp)} missing={sorted(exp-tagged)} | "
+          f"IVs correct={ivs_ok} | taps={phone.taps} | events={phone.events[:8]} | {time.time()-t0:.0f}s")
     return phone, book
 
 if __name__ == "__main__":

@@ -176,7 +176,7 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
    | 3 | Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)) | `~/.pogo/runtime/python` |
    | 4 | Python libraries: Appium client, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
 
-   Downloads are pinned to exact versions and checked against SHA-256 checksums. It takes a few minutes, needs no password and is skipped on later starts.
+   Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI (`core/requirements.txt`). It takes a few minutes, needs no password and is skipped on later starts.
    On the first run Xcode also builds and signs WebDriverAgent on your iPhone, which takes another minute or two.
 
 ### Updates
@@ -323,12 +323,14 @@ flowchart LR
 ```
 app/                 Mac app (SwiftUI), build script, icon
 app/dmg/             background and window layout of the installer DMG
-core/                the bot (pogo_bot.py), CP and PvP math (pokecalc.py, pokedata.json)
+core/pogo_bot.py     the bot's entry point
+core/ivory/          the bot, split into modules (settings and the game's UI strings in config.py)
+core/pokecalc.py     CP and PvP math, with the game data in core/pokedata.json
 scripts/run.sh       sets up the tools on the first start, starts Appium and the bot
 scripts/build_dmg.sh builds dist/IVory.dmg
 scripts/build_pokedata.py   refreshes the game data after new Pokémon are released
 scripts/build_runtime.sh    builds a self-contained Node/Appium/Python runtime into build/
-tests/               phone simulators and tests (see tests/README.md, in Czech)
+tests/               phone simulators and tests (see tests/README.md)
 docs/                images for this README
 Start.command        double-click launcher without the app
 ```
@@ -347,12 +349,12 @@ Apps from 1.1.0 on find the release by themselves and offer the update.
 
 ## Tests
 
-The bot can be tested without a phone. `tests/sim5.py` draws all game screens itself and runs 16 scenarios: fast and slow mode, PvP tags, renaming, tagging through CP search, game crashes, a list that scrolls further than the finger like on a real iPhone, duplicated list cells and more.
+The bot can be tested without a phone. `tests/sim_synthetic.py` draws all game screens itself and runs 26 scenarios: fast and slow mode, PvP tags, renaming, tagging through CP search, game crashes, a list that scrolls further than the finger like on a real iPhone, duplicated list cells and more.
 
 ```bash
 cd tests
-~/.pogo/venv/bin/python sim5.py            # all scenarios
-~/.pogo/venv/bin/python sim5.py verbose    # one scenario with the bot's log
+~/.pogo/venv/bin/python sim_synthetic.py            # all scenarios
+~/.pogo/venv/bin/python sim_synthetic.py verbose    # one scenario with the bot's log
 ```
 
 ## Troubleshooting
@@ -364,7 +366,7 @@ cd tests
 - **“Not authorized for performing UI testing actions”:** on the iPhone, turn on Settings → Developer → *Enable UI Automation*. IVory restarts WebDriverAgent once by itself before giving up.
 - **WebDriverAgent can't be signed:** check the Team ID in Settings → iPhone and that your Apple ID is signed in to Xcode. A free signature lasts 7 days; Appium signs it again on the next start.
 - **The bot gets stuck or taps the wrong spot:** the `chyba_XX` folder of the last run has screenshots of the last steps with the tap marked.
-- **Game in another language:** the game's UI strings live in the `L` dictionary in `core/pogo_bot.py`.
+- **Game in another language:** the game's UI strings live in the `L` dictionary in `core/ivory/config.py`.
 
 ## Uninstall
 

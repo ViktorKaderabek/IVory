@@ -1,14 +1,14 @@
 #!/bin/bash
-# Sestaví „IVory.app“ (Apple Silicon i Intel) do složky dist/.
-#   bash app/build_app.sh            # sestavit
-#   bash app/build_app.sh --install  # sestavit a zkopírovat do ~/Applications
-#   DIST=/jinam bash app/build_app.sh  # sestavit jinam (třeba když z dist/ zrovna běží třídění)
+# Builds "IVory.app" (Apple Silicon and Intel) into dist/.
+#   bash app/build_app.sh            # build
+#   bash app/build_app.sh --install  # build and copy into ~/Applications
+#   DIST=/elsewhere bash app/build_app.sh  # build elsewhere (e.g. while a run is sorting from dist/)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_NAME="IVory"
 OUT="${DIST:-$ROOT/dist}/$APP_NAME.app"
-# skládá a podepisuje se mimo Plochu: iCloud tam bundlu přidává atributy (FinderInfo), které podpis odmítne
+# assemble and sign outside the Desktop: iCloud adds attributes (FinderInfo) to the bundle there, which codesign rejects
 STAGE_DIR="$(mktemp -d)"
 STAGE="$STAGE_DIR/$APP_NAME.app"
 trap 'rm -rf "$STAGE_DIR"' EXIT
@@ -28,11 +28,11 @@ ICONSET="$(mktemp -d)/AppIcon.iconset"
 iconutil -c icns "$ICONSET" -o "$ROOT/app/AppIcon.icns"
 rm -rf "$(dirname "$ICONSET")"
 cp "$ROOT/app/AppIcon.icns" "$STAGE/Contents/Resources/AppIcon.icns"
-# jádro (Python) a spouštěč jedou uvnitř aplikace
+# the core (Python) and the launcher run inside the app
 rsync -a --exclude "__pycache__" "$ROOT/core" "$ROOT/scripts" "$STAGE/Contents/Resources/"
 
 echo "▶ Podepisuji (lokálně, ad-hoc)..."
-xattr -cr "$STAGE"   # Finder metadata v bundlu podpis odmítne
+xattr -cr "$STAGE"   # codesign rejects Finder metadata in the bundle
 codesign --force --deep --sign - "$STAGE"
 
 rm -rf "$OUT"

@@ -1,20 +1,16 @@
-"""Simulátor telefonu ze skutečných screenshotů – testuje navigaci, měření, tagování a zotavení."""
+"""Phone simulator built from real screenshots: tests navigation, measuring, tagging and recovery."""
 import io, os, sys, time, tempfile, json
 os.environ["POGO_NO_STREAM"] = "1"
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import sys as _sys
-from pathlib import Path as _Path
-_sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "core"))
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-import pogo_bot as S
+from support import S
 
 R = os.environ.get("POGO_SCREENS", os.path.expanduser("~/Desktop/pogo_runs/")).rstrip("/") + "/"
 TMP = Path(tempfile.mkdtemp(prefix="pogo_sim_"))
-S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "pamet.json"; S.OUT_DIR = TMP / "runs"
+S.CAL_FILE = TMP / "cal.json"; S.MEMORY_FILE = TMP / "memory.json"; S.OUT_DIR = TMP / "runs"
 S.NAV_TIMEOUT = 40
-S.TAG_NAME = "toREmove"   # syntetický seznam tagů má tenhle název
+S.TAG_NAME = "toREmove"   # the synthetic tag list uses this name
 
 def png(path): return open(R + path + ".png", "rb").read()
 
@@ -45,7 +41,7 @@ SCREENS = {
 class Fake:
     def __init__(self, start, glitches=()):
         self.state = start; self.prev = None; self.log = []; self.fails = []; self.tagged = []
-        self.glitches = list(glitches)   # (po kolika klepnutích, nový stav) – simulace popupu/pádu
+        self.glitches = list(glitches)   # (after how many taps, new state): simulates a popup or crash
         self.taps = 0
     def get_window_size(self): return {"width": 402, "height": 874}
     def get_screenshot_as_png(self): return SCREENS[self.state]
@@ -92,21 +88,21 @@ class Fake:
             k = st.split("_")[1]
             if near(0.87, 0.94, 0.08, 0.04): self.go("dmenu_" + k)
             elif near(0.5, 0.94, 0.05, 0.03): self.go("box")
-            elif near(0.5, 0.80, 0.45, 0.04): self.fails.append("EVOLVE ŘÁDEK!"); self.go("evolve")
+            elif near(0.5, 0.80, 0.45, 0.04): self.fails.append("EVOLVE ROW!"); self.go("evolve")
         elif st.startswith("dmenu_"):
             k = st.split("_")[1]
             if near(0.67, 0.771, 0.3, 0.025): self.go("intro_" + k)
-            elif near(0.66, 0.853, 0.3, 0.025): self.fails.append("TRANSFER v menu!"); self.go("transfer")
+            elif near(0.66, 0.853, 0.3, 0.025): self.fails.append("TRANSFER IN MENU!"); self.go("transfer")
             elif near(0.87, 0.94, 0.08, 0.04): self.go("detail_" + k)
         elif st.startswith("intro_"): self.go("bars_" + st.split("_")[1])
         elif st.startswith("bars_"): self.go("detail_" + st.split("_")[1])
         elif st == "multi":
             if near(0.5, 0.86, 0.4, 0.025): self.go("taglist")
-            elif near(0.5, 0.937, 0.45, 0.03): self.fails.append("TRANSFER v multiselectu!"); self.go("transfer")
+            elif near(0.5, 0.937, 0.45, 0.03): self.fails.append("TRANSFER IN MULTISELECT!"); self.go("transfer")
             elif near(0.107, 0.117, 0.06, 0.03): self.go("box")
         elif st == "transfer":
             if near(0.5, 0.643, 0.2, 0.025): self.go("multi" if self.prev == "multi" else "box")
-            elif near(0.5, 0.566, 0.25, 0.03): self.fails.append("POTVRZEN TRANSFER!!!")
+            elif near(0.5, 0.566, 0.25, 0.03): self.fails.append("TRANSFER CONFIRMED!!!")
         elif st in ("taglist", "taglist_on"):
             if near(0.3, 0.742, 0.3, 0.025): self.go("taglist_on" if st == "taglist" else "taglist")
             elif near(0.5, 0.86, 0.2, 0.025):
@@ -115,7 +111,7 @@ class Fake:
             elif near(0.5, 0.94, 0.05, 0.03): self.go("multi")
         elif st == "evolve":
             if near(0.5, 0.662, 0.2, 0.025): self.go("detail_482")
-            elif near(0.5, 0.597, 0.2, 0.03): self.fails.append("EVOLVE POTVRZEN!!!")
+            elif near(0.5, 0.597, 0.2, 0.03): self.fails.append("EVOLVE CONFIRMED!!!")
 
 def make_bot(fake):
     run_dir = TMP / f"run_{time.time():.0f}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
@@ -138,20 +134,20 @@ def scenario(name, start, glitches=(), full=False, limit=1):
         else:
             S.ensure_box(bot)
     except Exception as e:
-        print("VÝJIMKA:", type(e).__name__, e)
-    print(f"=> konec ve stavu {fake.state}, klepnutí {fake.taps}, chyby simulátoru {fake.fails}, otagováno {fake.tagged}, {time.time()-t0:.1f}s")
+        print("EXCEPTION:", type(e).__name__, e)
+    print(f"=> ended in state {fake.state}, taps {fake.taps}, simulator errors {fake.fails}, tagged {fake.tagged}, {time.time()-t0:.1f}s")
     return fake
 
 if __name__ == "__main__":
     which = sys.argv[1:] or ["nav"]
     if "nav" in which:
         for st in ["map", "menu", "box_tags", "detail_487", "dmenu_482", "bars_487", "transfer", "evolve", "taglist", "multi", "sort_menu", "search"]:
-            scenario("navigace do boxu", st)
+            scenario("navigate to storage", st)
     if "full" in which:
-        scenario("celý průchod s tagem", "map", full=True)
+        scenario("full pass with tagging", "map", full=True)
     if "glitch" in which:
-        scenario("pád do mapy uprostřed měření", "map", glitches=[(12, "map")], full=True)
-        scenario("transfer dialog uprostřed tagování", "map", glitches=[(22, "transfer")], full=True)
+        scenario("drop to map during measuring", "map", glitches=[(12, "map")], full=True)
+        scenario("transfer dialog during tagging", "map", glitches=[(22, "transfer")], full=True)
 
 if __name__ == "__main__" and "rerun" in sys.argv[1:]:
-    scenario("druhý běh – IV z paměti, bez znovu-tagování", "map", full=True)
+    scenario("second run: IVs from memory, no re-tagging", "map", full=True)

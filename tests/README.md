@@ -1,37 +1,87 @@
-# Testy a simulátory
+# Tests and simulators
 
-Testy běží bez telefonu: jádro (`core/pogo_bot.py`) dostává místo iPhonu „falešný telefon“,
-který vrací skutečné screenshoty ze hry a podle klepnutí přepíná obrazovky.
+The tests run without a phone: instead of an iPhone, the bot (`core/ivory`, started by `core/pogo_bot.py`)
+gets a "fake phone" that returns game screens and switches between them according to the taps.
+The older simulators use real game screenshots; `sim_synthetic.py` draws every screen itself.
 
-| Soubor | Co testuje |
+| File | What it tests |
 |---|---|
-| `test_screens2.py` | rozpoznání obrazovek na všech uložených screenshotech |
-| `test_logic.py` | pojistku proti TRANSFER/EVOLVE, mřížku boxu, skupiny podle obrázku |
-| `test_bars.py` | čtení IV z barů appraisalu (proti ručně ověřeným hodnotám) |
-| `sim.py` | navigace do boxu z 12 různých obrazovek, měření a tagování |
-| `sim2.py` | syntetický box se 39 Pokémony, scrollování, velká skupina, výpadky |
-| `sim3.py` | založení chybějícího tagu (Add New Tag → Enter tag name → Done) |
-| `sim4.py` | obě části: duplicity → Removable, celý box → IV tagy, s výpadky |
-| `sim5.py` | **bez screenshotů** – všechny obrazovky si kreslí sám: napsání hledání, kontrola a zakládání tagů v barvách (několik podob dialogu), duplicity, IV tagy včetně odebrání nesedících, PvP tagy, přejmenování, zavření inventáře tahem dolů. Scénář `realny_telefon` se chová jako skutečný iPhone (seznam ujede 1,6× dál než prst, větší box s legendami, CP v appraisalu občas nečitelné, na posledním Pokémonovi šipka ▶ chybí), `zdvojeny_seznam` vloží do seznamu zdvojené buňky, `multiselect_ujede` posouvá výběr více Pokémonů o kus dál, než má, `realny_vse` dělá všechny čtyři kroky na velkém boxu jako skutečný iPhone, `jen_duplicity` taguje přes hledání podle CP spojené s hledáním duplicit, `cp_v_davce_chybi` a `hledani_nic_nenajde` mají kus se špatně přečteným CP (v dávce chybí / hledání nenajde nic – bot ho přeskočí a zbytek otaguje), `tag_uz_maji` po DONE nechá výběr tagů viset a fajfky kreslí se zpožděním (při opakované dávce nesmí bot tag odškrtnout), `opakovany_beh` a `opakovany_beh_realny` pustí bota dvakrát se stejnou pamětí a mezi běhy přidají nově chycenou Eevee (druhý běh čte jen ji), `opakovany_beh_dlouha_jmena` navíc přejmenuje všechny kusy na dlouhá jména („MAX 3351 L15“), která OCR jako na iPhonu slévá se sousední buňkou do jednoho textu – druhý běh je přesto musí poznat z paměti a přečíst nejvýš 4 kusy. `dvojcata_stejne_cp` má dva Kyogre se stejným CP, které hledání ukáže v opačném pořadí než celý seznam – bot si v detailu ověří CP, jméno a HP a každý dostane jméno spočítané ze svých IV. Hledání vyhodnocuje jako hra: `cpN`, čárka = nebo, `&` = a zároveň, `!` = ne. V hlavičce ukazuje při hledání počet výsledků „🔍(n)“ |
-| `sim5_screens.py` | jak bot pozná každou obrazovku ze `sim5.py` |
+| `test_screens.py` | screen recognition on all saved screenshots |
+| `test_logic.py` | the safety guard against TRANSFER/EVOLVE, the storage grid, groups by sprite |
+| `test_bars.py` | reading IVs from the appraisal bars (against hand-checked values) |
+| `sim_navigation.py` | getting into the storage from 12 different screens, measuring and tagging |
+| `sim_box.py` | a synthetic storage with 39 Pokémon: scrolling, a large group, glitches |
+| `sim_new_tag.py` | creating a missing tag (Add New Tag → Enter tag name → Done) |
+| `sim_full_run.py` | both parts: duplicates → Removable, then the whole storage → IV tags, optionally with glitches |
+| `sim_synthetic.py` | **no screenshots needed**: draws every screen itself (see below) |
+| `sim_synthetic_screens.py` | how the bot classifies each screen drawn by `sim_synthetic.py` |
 
-Screenshoty ze hry **nejsou součástí repozitáře** (je na nich jméno trenéra a poloha).
-Testy je berou ze složky s výsledky běhů (`~/Desktop/pogo_runs`), jinou složku nastavíš
-proměnnou `POGO_SCREENS`. Názvy souborů odpovídají běhům z října 2026, na jiném
-počítači je potřeba vlastní sada screenshotů.
+`support.py` is shared setup: it puts `core/` on the import path and exposes the whole bot package
+as one namespace, `S`, so the simulators can read and patch any setting or function in one place.
 
-`sim5.py` jede kdekoliv (stačí Python z `build/runtime`, viz `scripts/build_runtime.sh`):
+## The synthetic simulator
+
+`sim_synthetic.py` covers the whole run: typing the search, checking and creating tags in their colors
+(in several forms of the new-tag dialog), duplicates, IV tags including removing ones that don't fit,
+PvP tags, renaming, and closing the storage by swiping down. It evaluates searches like the game does:
+`cpN`, a comma = or, `&` = and, `!` = not. During a search the header shows the result count "🔍(n)".
+
+| Scenario | What it simulates |
+|---|---|
+| `basic` | the default phone, all four steps |
+| `keyboard_auto` | the keyboard opens by itself in the new-tag dialog |
+| `enter_creates_tag` | Enter in the new-tag dialog creates the tag right away |
+| `colors_in_two_rows` | the tag colors are laid out in two rows |
+| `new_tag_auto_checked` | a newly created tag gets checked by itself |
+| `only_iv_tags` | only the IV tag step |
+| `pvp_and_rename` | only the PvP and renaming steps |
+| `slow_mode` | the bot's slow mode |
+| `no_next_in_appraisal` | the appraisal cannot move on to the next Pokémon (▶ / swipe) |
+| `swipe_closes_appraisal` | there is no ▶ arrow and a swipe closes the appraisal |
+| `glitches` | random drops to the map and game restarts |
+| `only_duplicates` | tags through a CP search combined with the duplicates search |
+| `no_select_all` | bigger storage, no SELECT ALL in the search results |
+| `real_phone` | behaves like a real iPhone: the list moves 1.6× further than the finger, a bigger storage with legendaries, the CP in the appraisal is sometimes unreadable, the ▶ arrow is missing on the last Pokémon |
+| `real_phone_all_steps` | all four steps on the big storage, like a real iPhone |
+| `duplicated_list` | inserts duplicated cells and a cell with a nonsense CP into the scanned list |
+| `multiselect_overshoots` | scrolling in the multi-Pokémon selection goes further than it should |
+| `cp_missing_in_batch` | a Pokémon with a misread CP is missing from a batch; the bot skips it and tags the rest |
+| `search_finds_nothing` | a Pokémon with a misread CP: its search finds nothing; the bot skips it and tags the rest |
+| `already_tagged` | after DONE the tag picker stays open and the check marks are drawn late; on the repeated batch the bot must not uncheck the tag |
+| `rerun` | runs the bot twice with the same memory and adds a newly caught Eevee between the runs; the second run reads only that one |
+| `rerun_real_phone` | the same as `rerun`, on a phone that behaves like a real iPhone |
+| `rerun_long_names` | also renames every Pokémon to a long name ("MAX 3351 L15") that OCR, as on the iPhone, merges with the neighboring cell into one text; the second run must still recognize them from memory and read at most 4 Pokémon |
+| `settings_changed` | the IV tag limits and the name template change between two runs |
+| `mixed_tags` | some Pokémon already have the Master League tag, so the selection shows "Mixed" and the bot cannot see the chip |
+| `twins_same_cp` | two Kyogre with the same CP that the search shows in the opposite order to the full list; the bot checks CP, name and HP on the detail screen and each gets a name computed from its own IVs |
+
+## Running
+
+`sim_synthetic.py` runs on any Mac, no screenshots needed (the bot reads text with Apple Vision, and the simulator
+draws it with the system Arial font). The Python from `build/runtime` is enough (see `scripts/build_runtime.sh`),
+or use `~/.pogo/venv/bin/python`:
 
 ```bash
 cd tests
-../build/runtime/python/bin/python3 sim5.py            # všechny scénáře
-../build/runtime/python/bin/python3 sim5.py verbose    # jeden scénář s výpisem bota
+../build/runtime/python/bin/python3 sim_synthetic.py                    # all scenarios
+../build/runtime/python/bin/python3 sim_synthetic.py verbose            # one scenario with the bot's log
+../build/runtime/python/bin/python3 sim_synthetic.py real_phone rerun   # only the named scenarios
+../build/runtime/python/bin/python3 sim_synthetic_screens.py            # how each drawn screen is classified
 ```
 
-Starší simulátory potřebují screenshoty:
+## Screenshot-based tests
+
+The other tests and simulators need your own screenshots. Game screenshots are **not part of the repository**
+(they show the trainer name and location). The tests read them from the folder with the run results
+(`~/Desktop/pogo_runs`); set `POGO_SCREENS` to use another folder. The file names refer to the author's runs
+from October 2026, so on another computer you need your own set of screenshots with matching names.
+
+These older tests are kept for reference and are not maintained: they predate step selection, so their full
+runs stop with an error (their run arguments have no `steps`), and `test_logic.py` calls `read_bar`, which the
+bot no longer has (it is `read_bars` now). `sim_synthetic.py` is the supported test suite.
 
 ```bash
 cd tests
-~/.pogo/venv/bin/python sim4.py verbose
-~/.pogo/venv/bin/python -c "import sim2; sim2.run(1, 0.02, 0.04)"
+~/.pogo/venv/bin/python sim_full_run.py verbose
+~/.pogo/venv/bin/python -c "import sim_box; sim_box.run(1, 0.02, 0.04)"
 ```

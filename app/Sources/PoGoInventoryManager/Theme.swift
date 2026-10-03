@@ -1,12 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Barvy podle návrhu (design systém Nocturne). Okno se řídí světlým/tmavým režimem macOS,
-/// hero karta a konzole jsou tmavé vždy.
+/// Colors from the design (the Nocturne design system). The window follows the macOS light/dark mode;
+/// the hero card and the console are always dark.
 enum Theme {
     static let appName = "IVory"
 
-    // MARK: Okno (tokeny --w-* z návrhu)
+    // MARK: Window (--w-* tokens from the design)
 
     static let bg = Color.adaptive(dark: .oklch(0.175, 0.026, 278), light: .oklch(0.946, 0.008, 280))
     static let chrome = Color.adaptive(dark: .oklch(0.19, 0.027, 278), light: .oklch(0.928, 0.009, 280))
@@ -38,7 +38,7 @@ enum Theme {
     static let yellow = Color.adaptive(dark: .oklch(0.88, 0.12, 92), light: .oklch(0.45, 0.1, 80))
     static let yellowTint = Color.adaptive(dark: .oklch(0.34, 0.07, 90), light: .oklch(0.93, 0.07, 92))
 
-    // MARK: Pevné barvy (stejné v obou režimech)
+    // MARK: Fixed colors (the same in both modes)
 
     static let nightBg = Color.oklch(0.16, 0.025, 278)
     static let nightSection = Color.oklch(0.29, 0.07, 282)
@@ -54,30 +54,14 @@ enum Theme {
     static let violet600 = Color.oklch(0.58, 0.19, 290)
     static let violet700 = Color.oklch(0.50, 0.19, 290)
 
-    /// Přechod aktivní fáze a postupu: tyrkysová → modrá → fialová.
+    /// Gradient for the active phase and progress: teal → blue → violet.
     static let progress = LinearGradient(colors: [lightTeal, lightBlue, violet], startPoint: .leading, endPoint: .trailing)
-
-    // MARK: IV tagy
-
-    /// Škála 10 barev stejné světlosti. Nejlepší tag je vždy zlatý, nejhorší vždy šedý.
-    static let tagPalette: [Color] = [
-        .oklch(0.84, 0.14, 85), .oklch(0.74, 0.15, 30), .oklch(0.72, 0.16, 350), .oklch(0.70, 0.15, 310),
-        .oklch(0.68, 0.14, 275), .oklch(0.70, 0.12, 240), .oklch(0.72, 0.11, 205), .oklch(0.74, 0.11, 175),
-        .oklch(0.76, 0.13, 140),
-    ]
-    static let tagGrey = Color.oklch(0.64, 0.02, 270)
-
-    /// Barva IV tagu podle pořadí (0 = nejlepší). Při méně tazích se berou barvy shora, poslední je šedý.
-    static func tagColor(_ index: Int, of count: Int) -> Color {
-        if count > 1 && index == count - 1 { return tagGrey }
-        return tagPalette[min(max(index, 0), tagPalette.count - 1)]
-    }
 }
 
 // MARK: - OKLCH
 
 extension NSColor {
-    /// Barva zadaná v OKLCH (jako v návrhu), převedená do sRGB.
+    /// A color given in OKLCH (as in the design), converted to sRGB.
     static func oklch(_ l: Double, _ c: Double, _ h: Double, alpha: Double = 1) -> NSColor {
         let a = c * cos(h * .pi / 180), b = c * sin(h * .pi / 180)
         let l_ = pow(l + 0.3963377774 * a + 0.2158037573 * b, 3)
@@ -101,7 +85,7 @@ extension Color {
         Color(nsColor: .oklch(l, c, h))
     }
 
-    /// Barva, která se přepne podle světlého/tmavého režimu.
+    /// A color that switches with light/dark mode.
     static func adaptive(dark: NSColor, light: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
@@ -109,23 +93,9 @@ extension Color {
     }
 }
 
-// MARK: - Společné prvky
+// MARK: - Shared components
 
-/// Karta: povrch okna s jemným okrajem.
-struct Card<Content: View>: View {
-    var padding: EdgeInsets = EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
-    }
-}
-
-/// Ikona na barevném podkladu (zaoblený čtverec).
+/// Icon on a colored background (rounded square).
 struct SoftIcon: View {
     let symbol: String
     var color: Color = Theme.accentInk
@@ -142,7 +112,7 @@ struct SoftIcon: View {
     }
 }
 
-/// Textové tlačítko v barvě akcentu, při najetí podbarvené.
+/// Text button in the accent color, highlighted on hover.
 struct GhostButtonStyle: ButtonStyle {
     var color: Color = Theme.accentInk
     var hover: Color = Theme.tint
@@ -175,7 +145,7 @@ struct GhostButtonStyle: ButtonStyle {
     }
 }
 
-/// Tlačítko s obrysem (Najít, Zjistit, Soubor s nastavením…).
+/// Outlined button (Find, Detect, Settings file…).
 struct OutlineButtonStyle: ButtonStyle {
     var color: Color = Theme.accentInk
     var stroke: Color = Theme.accent
@@ -210,7 +180,7 @@ struct OutlineButtonStyle: ButtonStyle {
     }
 }
 
-/// Pole formuláře: výška 32, podklad a okraj podle návrhu.
+/// Form field: height 32, background and border from the design.
 struct FieldBox<Content: View>: View {
     var monospaced = false
     @ViewBuilder var content: Content
@@ -228,7 +198,7 @@ struct FieldBox<Content: View>: View {
     }
 }
 
-/// Malé šipky nahoru/dolů (místo systémového Stepperu).
+/// Small up/down arrows (instead of the system Stepper).
 struct MiniStepper: View {
     @Binding var value: Int
     let range: ClosedRange<Int>
@@ -257,7 +227,7 @@ struct MiniStepper: View {
     }
 }
 
-/// Lehké „zmáčknutí“ tlačítka.
+/// A light "press" effect for buttons.
 struct PressableStyle: ButtonStyle {
     var scale: CGFloat = 0.94
 

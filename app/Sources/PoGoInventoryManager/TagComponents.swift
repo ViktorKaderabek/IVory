@@ -1,9 +1,9 @@
 import SwiftUI
 
-// MARK: - Barvy tagů
+// MARK: - Tag colors
 
 extension TagColor {
-    /// Barva kolečka (stejná v obou režimech, jako ve hře).
+    /// Dot color (the same in light and dark mode, as in the game).
     var swatch: Color {
         switch self {
         case .blue: return .oklch(0.62, 0.15, 255)
@@ -17,11 +17,11 @@ extension TagColor {
         }
     }
 
-    /// Na světlém kolečku je fajfka tmavá.
+    /// On a light dot the checkmark is dark.
     var isLight: Bool { [.green, .yellow, .orange, .gray].contains(self) }
 }
 
-/// Paleta 8 herních barev; nad kolečkem se ukáže název barvy.
+/// Palette of the 8 game colors; hovering a dot shows the color's name.
 struct TagPalette: View {
     @Binding var selection: TagColor
     var disabled = false
@@ -66,7 +66,7 @@ struct TagPalette: View {
     }
 }
 
-/// Barevná tečka u tagu; kliknutím se otevře paleta „Barva tagu ve hře“.
+/// Colored dot next to a tag; clicking it opens the "Tag color in the game" palette.
 struct ColorDotButton: View {
     @Binding var color: TagColor
     var size: CGFloat = 12
@@ -95,10 +95,10 @@ struct ColorDotButton: View {
     }
 }
 
-// MARK: - Pruh tagu
+// MARK: - Tag bar
 
-/// Řádek panelu „Tagy v inventáři“: tečka, název, pruh (pevná škála podle velikosti inventáře), počet.
-/// Tag, do kterého právě přibyly kusy, krátce svítí a ukáže +N.
+/// A row of the "Tags in your storage" panel: dot, name, bar (fixed scale based on the storage size), count.
+/// A tag that just gained Pokémon lights up briefly and shows +N.
 struct TagBarRow: View {
     let color: TagColor
     let label: String
@@ -149,7 +149,7 @@ struct TagBarRow: View {
     }
 }
 
-/// Panel „Tagy v inventáři“: Removable, IV tagy a PvP ligy. Plní se během běhu, po skončení zůstane.
+/// The "Tags in your storage" panel: Removable, IV tags and PvP leagues. Fills in during a run and stays after it ends.
 struct TagsPanel: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner

@@ -1,17 +1,13 @@
-"""Test zakládání tagu: v seznamu tag není -> Add New Tag -> Enter tag name -> psaní -> Done -> vybrat."""
+"""Tag creation test: the tag is not in the list -> Add New Tag -> Enter tag name -> typing -> Done -> select."""
 import io, os, sys, time, random
 os.environ["POGO_NO_STREAM"] = "1"
 from PIL import Image, ImageDraw
-import sys as _sys
-from pathlib import Path as _Path
-_sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "core"))
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-import pogo_bot as S
-import sim2
-from sim2 import F, W, H, draw_text_c, png
+from support import S
+import sim_box
+from sim_box import F, W, H, draw_text_c, png
 
-BASE_LIST = Image.open(sim2.R + "20261002_160212/82_tag_pick_cp691.png").convert("RGB")
-SEARCH = Image.open(sim2.R + "20261002_161252/07_search_check_0.png").convert("RGB")
+BASE_LIST = Image.open(sim_box.R + "20261002_160212/82_tag_pick_cp691.png").convert("RGB")
+SEARCH = Image.open(sim_box.R + "20261002_161252/07_search_check_0.png").convert("RGB")
 
 def render_taglist(has_tag, checked):
     img = BASE_LIST.copy(); d = ImageDraw.Draw(img)
@@ -37,7 +33,7 @@ class CmdExec:
     def get_command(self, n): return ("POST", "/x")
     def add_command(self, *a): pass
 
-class Phone3(sim2.Phone):
+class Phone3(sim_box.Phone):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.tag_exists = False; self.typed = ""; self.command_executor = CmdExec(); self.created = 0
@@ -74,17 +70,17 @@ class Phone3(sim2.Phone):
         return super().execute_script(name, args)
 
 def run(seed=5):
-    mons = sim2.make_box(seed)[:9]          # menší box: Venusaur, 4x Charmander, 4x Charizard
+    mons = sim_box.make_box(seed)[:9]       # smaller storage: Venusaur, 4x Charmander, 4x Charizard
     for i, m in enumerate(mons): m["id"] = i
     phone = Phone3(mons, seed, 0.0, 0.02)
-    run_dir = sim2.TMP / f"run3_{seed}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
-    bot = S.Bot(phone, run_dir); book = S.Book(); mem = S.Memory(sim2.TMP / f"pamet3_{seed}.json")
+    run_dir = sim_box.TMP / f"run3_{seed}"; (run_dir / "iv").mkdir(parents=True, exist_ok=True)
+    bot = S.Bot(phone, run_dir); book = S.Book(); mem = S.Memory(sim_box.TMP / f"memory3_{seed}.json")
     class A: max_groups = 0; fresh = False
     err = None
     try: S.run(bot, book, mem, A(), S.Report(run_dir, 0))
     except Exception as e: err = f"{type(e).__name__}: {e}"
-    exp = sim2.expected(mons); tagged = {m["id"] for m in mons if m["tags"]}
-    print(f"chyba={err} | tag založen {phone.created}x | otagováno={sorted(tagged)} čekáno={sorted(exp)} | nebezpečné={phone.bad} | klepnutí={phone.taps}")
+    exp = sim_box.expected(mons); tagged = {m["id"] for m in mons if m["tags"]}
+    print(f"error={err} | tag created {phone.created}x | tagged={sorted(tagged)} expected={sorted(exp)} | dangerous={phone.bad} | taps={phone.taps}")
 
 if __name__ == "__main__":
     run()

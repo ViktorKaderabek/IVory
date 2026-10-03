@@ -1,14 +1,15 @@
 #!/bin/bash
 # =====================================================================
-#  Připraví vše, co bot potřebuje, do build/runtime:
-#    node/         Node.js (oficiální build z nodejs.org)
+#  Puts everything the bot needs into build/runtime:
+#    node/         Node.js (official build from nodejs.org)
 #    appium/       Appium server
-#    appium-home/  XCUITest driver (WebDriverAgent je jeho součástí)
-#    python/       Python s knihovnami (OpenCV, Apple Vision, Appium klient…)
-#  Stahuje se jen tady, při sestavování. Hotová aplikace pak nic nestahuje.
+#    appium-home/  XCUITest driver (WebDriverAgent is part of it)
+#    python/       Python with libraries (OpenCV, Apple Vision, Appium client…)
+#  Downloads happen only here, at build time; the finished runtime needs nothing more.
+#  The app doesn't bundle it: scripts/run.sh sets up its own copy in ~/.pogo/runtime.
 #
-#    bash scripts/build_runtime.sh          # sestavit (když už je hotový, nic nedělá)
-#    bash scripts/build_runtime.sh --force  # sestavit znovu
+#    bash scripts/build_runtime.sh          # build (does nothing if already built)
+#    bash scripts/build_runtime.sh --force  # build again
 # =====================================================================
 set -euo pipefail
 
@@ -37,25 +38,25 @@ case "$(uname -m)" in
   *) echo "✖ Nepodporovaná architektura $(uname -m)"; exit 1 ;;
 esac
 
-# Co bot nepotřebuje: testy PyObjC, správce prohlížečů ze Selenia, Tk/IDLE (~35 MB)
+# What the bot doesn't need: PyObjC tests, Selenium's browser managers, Tk/IDLE (~35 MB)
 prune_python() {
   local py="$1" site
   site="$("$py/bin/python3" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
   rm -rf "$site/PyObjCTest" "$site/selenium/webdriver/common/"{linux,windows,macos} \
     "$py/lib/python3."*/{idlelib,tkinter,turtledemo,ensurepip} "$py/lib/"{tcl,tk,itcl}* "$py/lib/libtcl"*
 }
-if [ "${1:-}" = "--prune" ]; then   # jen ořezat už hotový runtime
+if [ "${1:-}" = "--prune" ]; then   # only trim a runtime that is already built
   prune_python "$OUT/python"; echo "✔ Ořezáno ($(du -sh "$OUT" | cut -f1))"; exit 0
 fi
 
-# Otisk obsahu: když se nezměnily verze ani requirements.txt, runtime se nestaví znovu.
+# Content stamp: if neither the versions nor requirements.txt changed, the runtime isn't rebuilt.
 STAMP="node $NODE_VERSION | python $PY_VERSION+$PY_RELEASE | appium $APPIUM_VERSION | xcuitest $XCUITEST_VERSION | $(uname -m) | req $(shasum -a 256 "$REQ" | cut -c1-12)"
 if [ "${1:-}" != "--force" ] && [ -f "$OUT/VERSION" ] && [ "$(head -1 "$OUT/VERSION")" = "$STAMP" ]; then
   echo "✔ Runtime je hotový ($OUT)"
   exit 0
 fi
 
-fetch() {  # fetch URL SOUBOR SHA256
+fetch() {  # fetch URL FILE SHA256
   local url="$1" file="$DL/$2" sha="$3"
   if [ -f "$file" ] && [ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$sha" ]; then
     return 0
@@ -91,12 +92,12 @@ echo "▶ XCUITest driver $XCUITEST_VERSION"
 mkdir -p "$TMP/appium-home"
 APPIUM_HOME="$TMP/appium-home" node "$TMP/appium/node_modules/appium/index.js" \
   driver install --source=npm "appium-xcuitest-driver@$XCUITEST_VERSION"
-# WebDriverAgent si tuhle složku zakládá sám – ať do ní nemusí zapisovat
+# WebDriverAgent creates this folder on its own; create it now so it doesn't have to write into it
 mkdir -p "$TMP/appium-home/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/Resources/WebDriverAgent.bundle" 2>/dev/null || true
 
 echo "▶ Python $PY_VERSION a knihovny"
 fetch "https://github.com/astral-sh/python-build-standalone/releases/download/$PY_RELEASE/${PY_PKG/+/%2B}.tar.gz" "$PY_PKG.tar.gz" "$PY_SHA"
-tar -xzf "$DL/$PY_PKG.tar.gz" -C "$TMP"   # rozbalí se do python/
+tar -xzf "$DL/$PY_PKG.tar.gz" -C "$TMP"   # extracts into python/
 PIP_CACHE_DIR="$DL/pip-cache" "$TMP/python/bin/python3" -m pip install --disable-pip-version-check -q \
   --only-binary=:all: -r "$REQ"
 prune_python "$TMP/python"
