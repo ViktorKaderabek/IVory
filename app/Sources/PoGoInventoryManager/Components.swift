@@ -13,7 +13,7 @@ struct StepCard: View {
 
     var body: some View {
         Button(action: toggle) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 SoftIcon(symbol: step.symbol,
                          color: isOn ? Theme.accentInk : Theme.muted,
                          background: isOn ? Theme.tint : Theme.raise,
@@ -25,7 +25,6 @@ struct StepCard: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(3)
                 }
                 Spacer(minLength: 0)
                 ZStack {
@@ -41,11 +40,10 @@ struct StepCard: View {
                     }
                 }
                 .frame(width: 18, height: 18)
-                .padding(.top, 8)
             }
             .foregroundStyle(Theme.text)
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 84, maxHeight: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 84, maxHeight: .infinity, alignment: .leading)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -67,6 +65,7 @@ struct StepCard: View {
 /// Čtyři fáze (Duplicity → IV tagy → PvP tagy → Přejmenování) se spojnicemi, které se plní.
 struct PhasePanel: View {
     @EnvironmentObject private var runner: Runner
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let steps: Steps
 
     var body: some View {
@@ -77,6 +76,12 @@ struct PhasePanel: View {
                         ZStack(alignment: .leading) {
                             Capsule().fill(Theme.track)
                             Capsule().fill(Theme.progress).frame(width: geo.size.width * fill(before: step))
+                            if flowing(before: step) {
+                                // fáze vlevo právě běží: po spojnici k další fázi běží světlo
+                                FlowStripe(reduceMotion: reduceMotion)
+                                    .clipShape(Capsule())
+                                    .transition(.opacity)
+                            }
                         }
                     }
                     .frame(height: 4)
@@ -90,6 +95,7 @@ struct PhasePanel: View {
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: runner.stats.phase)
+        .animation(.easeOut(duration: 0.5), value: runner.phaseProgress)
     }
 
     private var shownSteps: Steps { HeroState(runner: runner) == .ready ? steps : runner.steps }
@@ -101,15 +107,23 @@ struct PhasePanel: View {
         return p
     }
 
-    /// Spojnice před krokem: plná, když je předchozí krok hotový; poloviční během běhu předchozího.
+    /// Spojnice před krokem: plná, když je předchozí krok hotový. Během běhu předchozího ukazuje,
+    /// kolik z něj je hotovo – jen když to bot hlásí (čtení IV); jinak zůstane prázdná a běží po ní světlo.
     private func fill(before step: Runner.Step) -> CGFloat {
         let prev = step.rawValue - 1
         switch HeroState(runner: runner) {
         case .ready: return 0
         case .done: return 1
-        case .running: return current > prev ? 1 : (current == prev ? 0.5 : 0)
+        case .running:
+            if current > prev { return 1 }
+            return current == prev ? CGFloat(min(0.95, runner.phaseProgress ?? 0)) : 0
         case .stopped, .error: return current > prev ? 1 : 0
         }
+    }
+
+    /// Po spojnici za právě běžící fází běží světlo.
+    private func flowing(before step: Runner.Step) -> Bool {
+        HeroState(runner: runner) == .running && current == step.rawValue - 1
     }
 
     private func state(_ step: Runner.Step) -> PhaseStep.State {
@@ -176,9 +190,9 @@ struct PhaseStep: View {
                     .init(color: Theme.violet, location: 1),
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .background(Circle().fill(Theme.lightTeal.opacity(0.22)).padding(-4))
-                .phaseAnimator([false, true]) { view, phase in
-                    view.shadow(color: Theme.lightTeal.opacity(reduceMotion ? 0.55 : (phase ? 0.75 : 0.3)), radius: 10)
-                } animation: { _ in .easeInOut(duration: 1.0) }
+                .background(PulsingCircle(glow: Theme.lightTeal, glowRadius: 10,
+                                          glowRange: reduceMotion ? 0.55...0.55 : 0.3...0.75, duration: 1.0,
+                                          animate: !reduceMotion))
         }
     }
 

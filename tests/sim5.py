@@ -11,7 +11,7 @@ Pokémonovi klepnutí na místo šipky ▶ appraisal zavře.
   python sim5.py                 # všechny scénáře
   python sim5.py verbose         # jeden scénář s výpisem bota
 """
-import io, os, re, sys, time, random, tempfile
+import io, itertools, os, re, sys, time, random, tempfile
 os.environ["POGO_NO_STREAM"] = "1"
 from pathlib import Path
 import numpy as np
@@ -90,7 +90,8 @@ class Phone:
     def __init__(self, mons, seed=1, glitch=0.0, kb_auto=False, return_submits=False, two_rows=False,
                  auto_check=False, existing_tags=(), nav=True, swipe_closes=False, gain=1.0, cp_flaky=0.0,
                  select_all=False, multi_fling=0.0, big=0, select_all_search=True, ghost=0, done_stuck=0,
-                 check_delay=0.0):
+                 check_delay=0.0, twins_rev=False):
+        self.twins_rev = twins_rev                            # výsledky hledání řadí kusy se stejným druhem i CP opačně
         self.mons = mons; self.rnd = random.Random(seed); self.glitch = glitch
         self.gain = gain                                      # seznam ujede gain× víc než prst (iPhone ~1,6)
         self.cp_flaky = cp_flaky                              # jak často není v appraisalu CP čitelné
@@ -135,7 +136,11 @@ class Phone:
             else: v = False
             return v != neg
         groups = [[t.strip().lower() for t in g.split(",") if t.strip()] for g in self.query.split("&")]
-        return [i for i, m in enumerate(self.mons) if all(any(term(m, t) for t in g) for g in groups if g)]
+        out = [i for i, m in enumerate(self.mons) if all(any(term(m, t) for t in g) for g in groups if g)]
+        if self.twins_rev:                 # pořadí kusů se stejným číslem i CP hra nedrží – ve výsledcích opačně
+            key = lambda i: (self.mons[i]["sp"], self.mons[i]["cp"])
+            out = [i for _, grp in itertools.groupby(out, key) for i in reversed(list(grp))]
+        return out
 
     def max_off(self):
         rows = (len(self.shown()) + 2) // 3
@@ -599,6 +604,23 @@ class Phone:
             elif near(.5, .635, .2, .025) and self.typed: self.finish_create()
 
 
+def merging_ocr(orig):
+    """OCR jako na skutečném iPhonu: dlouhé přezdívky sousedních buněk na stejném řádku (s tečkou tagu)
+    slije do jednoho textu („• MAX 2992 L15 •MAX 3619 L20“) – po přejmenování podle šablony."""
+    def ocr(data, fast=False):
+        out = orig(data, fast)
+        names = sorted((t for t in out if t["text"].lstrip().startswith("•") and len(t["text"]) >= 10
+                        and t["cy"] > 0.215), key=lambda t: (round(t["cy"], 2), t["cx"]))
+        used, merged = set(), []
+        for a, b in zip(names, names[1:]):
+            if id(a) in used or abs(a["cy"] - b["cy"]) > 0.01 or b["x0"] - a["x1"] > 0.08:
+                continue
+            used |= {id(a), id(b)}
+            merged.append(dict(a, text=f"{a['text']} {b['text']}", x1=b["x1"], cx=(a["x0"] + b["x1"]) / 2))
+        return [t for t in out if id(t) not in used] + merged
+    return ocr
+
+
 CP_QUERY = re.compile(r"^cp\d+(,cp\d+)*(&(.+))?$")
 
 
@@ -657,7 +679,18 @@ class Args:
 def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, inject=False, **variant):
     rerun = variant.pop("rerun", False)       # druhý běh se stejnou pamětí (a jednou nově chycenou Eevee)
     mixed = variant.pop("mixed", False)       # část kusů má Master League „od včera“ a bot jeho štítek nevidí
+    merge = variant.pop("merge_names", False) # OCR slévá dlouhá jména sousedních buněk (jako iPhone)
+    max_reads = variant.pop("max_reads", None)    # druhý běh smí přečíst nejvýš tolik kusů (appraisal + ▶)
+    old_min = S.RENAME["min"]
+    S.RENAME["min"] = variant.pop("rename_min", old_min)
+    if variant.get("template"):
+        S.RENAME["template"] = variant.pop("template")
     mons = make_mons(seed, variant.get("big", 0)); init = [set(m["tags"]) for m in mons]
+    if variant.get("twins_rev"):              # dva Kyogre se stejným CP (a jinými IV a HP) těsně za sebou
+        k = next(i for i, m in enumerate(mons) if m["sp"] == "Kyogre")
+        for j, iv in ((k, (12, 12, 15)), (k + 1, (12, 13, 14))):
+            mons[j].update(iv=iv, level=20); fill_stats(mons[j])
+        assert mons[k]["cp"] == mons[k + 1]["cp"] and mons[k]["hp"] != mons[k + 1]["hp"]
     existing = [("Mega", "orange"), ("100% Perfect", "purple"), ("95-99% Insane", "blue"),
                 ("70-0% Garbage", "black")]                         # ostatní tagy ve hře chybí
     if mixed:
@@ -681,7 +714,9 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     bot = S.Bot(phone, run_dir); bot.udid = "SIM"; bot.fast = fast
     book, book2, mem = S.Book(), S.Book(), S.Memory(S.MEMORY_FILE)
     rep = S.Report(run_dir, 0); err = None; t0 = time.time()
-    orig_scan = S.grid_scan
+    orig_scan, orig_ocr = S.grid_scan, S.ocr
+    if merge:
+        S.ocr = merging_ocr(orig_ocr)
     if inject:
         def grid_scan_bad(bot):
             # seznam z posouvání se zdvojenou buňkou a buňkou s nesmyslným CP (jako na skutečném telefonu)
@@ -721,7 +756,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         err = f"{type(e).__name__}: {e}"
     finally:
         S.log = log
-        S.grid_scan = orig_scan
+        S.grid_scan, S.ocr = orig_scan, orig_ocr
     template = S.RENAME["template"] or PC.DEFAULT_TEMPLATE      # šablona, která platila na konci
     # --- očekávání
     ghost = {phone.ghost_idx} if phone.ghost_idx is not None else set()
@@ -750,7 +785,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         if "rename" in st_used:
             pct = round(sum(m["iv"]) * 100 / 45)
             want = m["sp"] if m["sp"] != "" else ""
-            if 85 <= pct <= 100 and i != 10:
+            if S.RENAME["min"] <= pct <= S.RENAME["max"] and i != 10:
                 want = PC.render_name(template, PC.chip_values(PC.info(sid, m["iv"], m["level"], m["cp"]), m["iv"]))
             elif i == 10:
                 want = "Kytka"
@@ -765,7 +800,8 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         and not bad_pvp and not bad_name and not phone.bad \
         and ("duplicates" not in st_used or phone.queries) and all(query_ok(q) for q in phone.queries) \
         and (not variant.get("ghost") or ghost) and not phone.done_stuck \
-        and (not rerun or (second is not None and second[1] <= 3))
+        and (not rerun or (second is not None and second[1] <= 3)) \
+        and (max_reads is None or (second is not None and second[1] + second[2] <= max_reads))
     print(f"{'OK ' if ok else 'CHYBA'} {name:28s} chyba={err} | Removable špatně={bad_rem} | IV špatně={bad_iv} | "
           f"PvP špatně={bad_pvp} | jména špatně={bad_name} | přejmenováno={phone.renamed} | "
           f"ztracené jiné tagy={other_lost} | chybí tagy={missing} | špatná barva={wrong_color} | "
@@ -774,6 +810,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
           (f" | 1. běh {first[0]:.0f}s, appraisal {first[1]}×, ▶ {first[2]}× | 2. běh {second[0]:.0f}s, "
            f"appraisal {second[1]}×, ▶ {second[2]}×" if first and second else ""), flush=True)
     S.IV_TAGS, S.RENAME["template"] = list(DEFAULT_IV_TAGS), list(DEFAULT_TEMPLATE)   # další scénáře s výchozím
+    S.RENAME["min"] = old_min
     return ok
 
 
@@ -800,8 +837,17 @@ SCENARIOS = {
     "tag_uz_maji": dict(big=1, done_stuck=1, check_delay=0.6, steps=["iv", "pvp"]),
     "opakovany_beh": dict(big=1, rerun=True),
     "opakovany_beh_realny": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True),
+    # přejmenování na dlouhá jména („MAX 3351 L15“), která OCR v mřížce slévá – druhý běh je musí poznat z paměti
+    "opakovany_beh_dlouha_jmena": dict(gain=1.6, big=1, cp_flaky=0.15, rerun=True, merge_names=True, rename_min=0,
+                                       max_reads=4,
+                                       template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
+                                                 {"k": "space"}, {"k": "lvl"}]),
     "zmena_nastaveni": dict(big=1, rerun="config"),
     "mixed_tagy": dict(big=1, mixed=True, steps=["pvp"]),
+    # dva Kyogre se stejným CP, které hledání ukáže v opačném pořadí – jméno musí dostat ten správný
+    "dvojcata_stejne_cp": dict(big=1, twins_rev=True, steps=["iv", "rename"],
+                               template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
+                                         {"k": "space"}, {"k": "lvl"}]),
 }
 
 if __name__ == "__main__":

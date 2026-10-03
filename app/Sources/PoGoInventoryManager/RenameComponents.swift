@@ -79,7 +79,10 @@ struct NameSample: Identifiable {
 }
 
 /// Poslední přečtený inventář (~/.pogo/last_box.json, zapisuje bot): kolik kusů je v rozsahu IV a ukázky jmen.
-struct LastBox {
+/// Soubor se čte jen jednou a znovu až po změně (podle data úpravy); výsledky pro rozsah se pamatují.
+/// Pohledy si ho berou v inicializaci stavu, která běží při každém překreslení – proto musí být levný.
+@MainActor
+final class LastBox {
     struct Item: Decodable {
         let cp: Int?
         let name: String
@@ -87,36 +90,72 @@ struct LastBox {
         let tags: [String]?
         let custom: Bool?
         let values: [String: String]?
+        let pct: Int
 
-        var pct: Int { Int((Double(iv.reduce(0, +)) / 45 * 100).rounded()) }
+        enum CodingKeys: String, CodingKey { case cp, name, iv, tags, custom, values }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            cp = try c.decodeIfPresent(Int.self, forKey: .cp)
+            name = try c.decode(String.self, forKey: .name)
+            iv = try c.decode([Int].self, forKey: .iv)
+            tags = try c.decodeIfPresent([String].self, forKey: .tags)
+            custom = try c.decodeIfPresent(Bool.self, forKey: .custom)
+            values = try c.decodeIfPresent([String: String].self, forKey: .values)
+            pct = Int((Double(iv.reduce(0, +)) / 45 * 100).rounded())
+        }
     }
 
+    /// Od nejvyššího IV.
     let items: [Item]
+    private var counts: [ClosedRange<Int>: Int] = [:]
+    private var sampleCache: [ClosedRange<Int>: [NameSample]] = [:]
+
+    private init(items: [Item]) {
+        self.items = items.sorted { $0.pct > $1.pct }
+    }
 
     static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pogo/last_box.json")
+    private static var cached: (modified: Date, box: LastBox?)?
 
     static func load() -> LastBox? {
         #if DEBUG
         if ProcessInfo.processInfo.environment["IVORY_SHOTS"] != nil { return nil }   // snímky pro README ukazují ukázková jména, ne vlastní box
         #endif
+        guard let modified = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date else {
+            cached = nil
+            return nil
+        }
+        if let cached, cached.modified == modified { return cached.box }
         struct File: Decodable { let items: [Item] }
-        guard let data = try? Data(contentsOf: url),
-              let file = try? JSONDecoder().decode(File.self, from: data), !file.items.isEmpty else { return nil }
-        return LastBox(items: file.items)
+        var box: LastBox?
+        if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data), !file.items.isEmpty {
+            box = LastBox(items: file.items)
+        }
+        cached = (modified, box)
+        return box
     }
 
-    func count(in range: ClosedRange<Int>) -> Int { items.filter { range.contains($0.pct) }.count }
+    func count(in range: ClosedRange<Int>) -> Int {
+        if let n = counts[range] { return n }
+        let n = items.filter { range.contains($0.pct) }.count
+        counts[range] = n
+        return n
+    }
 
     /// Ukázky: tři nejlepší kusy v rozsahu (se spočítaným druhem) a jeden s vlastní přezdívkou.
     func samples(in range: ClosedRange<Int>) -> [NameSample] {
-        let inRange = items.filter { range.contains($0.pct) }.sorted { $0.pct > $1.pct }
+        if let cached = sampleCache[range] { return cached }
+        let inRange = items.filter { range.contains($0.pct) }
         var out = inRange.filter { $0.custom != true && ($0.values?["evo"] != nil) }.prefix(3).map {
             NameSample(name: $0.name, iv: $0.iv, values: $0.values ?? [:])
         }
         if let c = inRange.first(where: { $0.custom == true }) {
             out.append(NameSample(name: c.name, iv: c.iv, values: c.values ?? [:], custom: true))
         }
-        return out.isEmpty ? NameSample.design : Array(out)
+        let result = out.isEmpty ? NameSample.design : Array(out)
+        sampleCache[range] = result
+        return result
     }
 }
 

@@ -9,7 +9,14 @@ struct MainView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("settingsWidth") private var settingsWidth = 400.0
     @State private var settingsOpen = false
-    @State private var panelWidth: CGFloat = 0
+    @State private var page = Page.overview
+    /// Statistiky se postaví jednou (chvíli po spuštění) a pak zůstanou, jen se skrývají.
+    @State private var statsBuilt = false
+    /// Panel je vysunutý (animuje se jen jeho posun).
+    @State private var panelShown = false
+    /// Během vysouvání panelu má hlavní obsah pevnou šířku, aby se v každém snímku nepřeskládával.
+    @State private var frozenMainWidth: CGFloat?
+    @State private var panelGeneration = 0
     @State private var minLocked = false
     @State private var grownBy: CGFloat = 0
     @State private var dragStartWidth: Double?
@@ -21,26 +28,39 @@ struct MainView: View {
 
     private var showConsent: Bool { askConsent ?? !Consent.isGiven(store.config) }
 
+    /// Obrazovka v hlavní části okna (přepíná se v liště).
+    enum Page { case overview, stats }
+
 
     /// Nejmenší šířka hlavního obsahu, pod kterou se karty mačkají.
     private static let mainMinWidth: CGFloat = 720
     private static let panelAnimation = 0.32
 
     var body: some View {
-        HStack(spacing: 0) {
-            ScrollView {
-                MainColumn(fresh: $fresh)
-                    .id(store.config.language)     // po přepnutí jazyka se všechny texty postaví znovu
-                    .padding(EdgeInsets(top: 22, leading: 28, bottom: 26, trailing: 28))
-                .frame(maxWidth: .infinity)
+        ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .top) {
+                pageView(.overview) { MainColumn(fresh: $fresh) }
+                if statsBuilt {
+                    pageView(.stats) {
+                        StatsView {
+                            showPage(.overview)
+                            guard !runner.isRunning else { return }
+                            store.save()
+                            runner.start(steps: store.config.steps, fresh: false)
+                        }
+                    }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .background(Theme.bg)
+            .frame(width: frozenMainWidth)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.trailing, frozenMainWidth == nil && settingsOpen ? settingsWidth : 0)
 
             settingsPanel
         }
+        .background(Theme.bg)
+        .clipped()
         .disabled(showConsent)
-        .blur(radius: showConsent ? 3 : 0)
+        .modifier(BlurWhen(on: showConsent))
         .overlay {
             if showConsent {
                 ConsentOverlay { withAnimation(.easeOut(duration: 0.25)) { askConsent = false } }
@@ -50,7 +70,10 @@ struct MainView: View {
         .onAppear {
             if askConsent == nil { askConsent = !Consent.isGiven(store.config) }
             Updater.shared.start { [store] in store.config.checkUpdates }
+            StatsStore.shared.refresh(removeTag: store.config.removeTag)   // ať jsou Statistiky hned připravené
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { statsBuilt = true }
         }
+        .onChange(of: runner.finishedAt) { _, _ in StatsStore.shared.refresh(removeTag: store.config.removeTag) }
         .foregroundStyle(Theme.text)
         .frame(minWidth: Self.mainMinWidth + (minLocked ? settingsWidth : 0), minHeight: 660)
         .background(WindowReader(ref: window))
@@ -92,6 +115,7 @@ struct MainView: View {
             store.config.steps = Steps(duplicates: on.contains("duplicates"), iv: on.contains("iv"),
                                        pvp: on.contains("pvp"), rename: on.contains("rename"))
         }
+        if env["IVORY_PAGE"] == "stats" { statsBuilt = true; page = .stats }
         if env["IVORY_SETTINGS"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { setSettings(true) }
         }
@@ -101,17 +125,15 @@ struct MainView: View {
 
     // MARK: - Nastavení z boku
 
-    /// Panel má pevnou šířku a při otevírání se jen odkrývá (obsah uvnitř se nepřeskládává).
+    /// Panel má pevnou šířku a při otevírání jen vyjede zprava (animuje se posun, nic se nepřeskládává).
     private var settingsPanel: some View {
         SettingsInspector()
-            .id(store.config.language)
             .frame(width: settingsWidth)
             .overlay(alignment: .leading) {
                 Rectangle().fill(Theme.border).frame(width: 1)
             }
             .overlay(alignment: .leading) { resizeHandle }
-            .frame(width: panelWidth, alignment: .leading)
-            .clipped()
+            .offset(x: panelShown ? 0 : settingsWidth + 1)
             .allowsHitTesting(settingsOpen)
             .accessibilityHidden(!settingsOpen)
     }
@@ -131,24 +153,29 @@ struct MainView: View {
                         dragStartWidth = start
                         let width = min(520, max(360, start - value.translation.width))
                         settingsWidth = width
-                        panelWidth = width
                     }
                     .onEnded { _ in dragStartWidth = nil }
             )
     }
 
     /// Otevře/zavře nastavení. Když by na obsah nezbylo dost místa, okno se o chybějící kus
-    /// plynule rozšíří (a po zavření zase zúží), takže se karty nemačkají ani neskáčou.
+    /// plynule rozšíří (a po zavření zase zúží), takže se karty nemačkají.
+    /// Hlavní obsah se na novou šířku přeskládá jen jednou, hned na začátku (prolne Crossfade), a během
+    /// animace má pevnou šířku – panel přes něj jen vyjede. Dřív se obsah zužoval po snímcích a každý
+    /// snímek znamenal přeskládat celé okno (vypadalo to jako 5 snímků za sekundu).
     private func setSettings(_ open: Bool) {
         let duration = Self.panelAnimation
         guard open != settingsOpen else { return }
-        settingsOpen = open
-        let target = CGFloat(settingsWidth)
+        panelGeneration += 1
+        let generation = panelGeneration
+        let panel = CGFloat(settingsWidth)
 
-        if open {
-            if let win = window.window {
-                let content = win.contentLayoutRect.width - panelWidth
-                var grow = max(0, Self.mainMinWidth + target - content)
+        var targetFrame: NSRect?
+        var finalMain: CGFloat?
+        if let win = window.window {
+            let content = win.contentLayoutRect.width
+            if open {
+                var grow = max(0, Self.mainMinWidth + panel - content)
                 var frame = win.frame
                 if let screen = win.screen?.visibleFrame {
                     grow = min(grow, max(0, screen.width - frame.width))
@@ -158,22 +185,53 @@ struct MainView: View {
                     frame.size.width += grow
                 }
                 grownBy = grow
-                if grow > 0 { animateWindow(win, to: frame, duration: duration) }
-            }
-            withAnimation(.easeInOut(duration: duration)) { panelWidth = target }
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) {
-                if settingsOpen { minLocked = true }
-            }
-        } else {
-            minLocked = false
-            withAnimation(.easeInOut(duration: duration)) { panelWidth = 0 }
-            if let win = window.window, grownBy > 0 {
+                if grow > 0 { targetFrame = frame }
+                finalMain = content + grow - panel
+            } else {
                 var frame = win.frame
                 frame.size.width = max(Self.mainMinWidth, frame.width - grownBy)
-                animateWindow(win, to: frame, duration: duration)
+                if grownBy > 0 { targetFrame = frame }
+                finalMain = content - (win.frame.width - frame.width)
+                grownBy = 0
             }
-            grownBy = 0
         }
+
+        if !open { minLocked = false }
+        Crossfade.run(in: window.window, duration: 0.2) {
+            frozenMainWidth = finalMain
+            settingsOpen = open
+        }
+        withAnimation(.easeInOut(duration: duration)) { panelShown = open }
+        if let win = window.window, let targetFrame { animateWindow(win, to: targetFrame, duration: duration) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) {
+            guard generation == panelGeneration else { return }
+            var plain = Transaction()
+            plain.disablesAnimations = true
+            withTransaction(plain) { frozenMainWidth = nil }   // rozvržení je už stejné, nic se nepohne
+            if open { minLocked = true }
+        }
+    }
+
+    private func showPage(_ new: Page) {
+        guard new != page else { return }
+        if new == .stats { statsBuilt = true }
+        Crossfade.run(in: window.window) { page = new }
+    }
+
+    /// Obrazovka s vlastním posouváním. Obě zůstávají postavené, přepne se jen viditelnost (a prolne
+    /// Crossfade) – dřív se při každém přepnutí jedna celá zahodila a druhá stavěla znovu, a to sekalo.
+    private func pageView<Content: View>(_ which: Page, @ViewBuilder content: () -> Content) -> some View {
+        let shown = page == which
+        return ScrollView {
+            content()
+                .padding(EdgeInsets(top: 22, leading: 28, bottom: 26, trailing: 28))
+                .frame(maxWidth: .infinity)
+        }
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
+        .environment(\.pageActive, shown)
+        .zIndex(shown ? 1 : 0)
     }
 
     private func animateWindow(_ win: NSWindow, to frame: NSRect, duration: Double) {
@@ -212,6 +270,16 @@ struct MainView: View {
 
     private var actionItems: some View {
         HStack(spacing: 4) {
+            Button { showPage(.overview) } label: {
+                Label(tr("Přehled", "Overview"), systemImage: "house")
+            }
+            .buttonStyle(HeaderButtonStyle(active: page == .overview))
+            .help(tr("Třídění a jeho průběh", "Sorting and its progress"))
+            Button { showPage(.stats) } label: {
+                Label(tr("Statistiky", "Stats"), systemImage: "chart.bar")
+            }
+            .buttonStyle(HeaderButtonStyle(active: page == .stats))
+            .help(tr("Co IVory ví o tvém inventáři", "What IVory knows about your storage"))
             Button { runner.openResults() } label: {
                 Label(tr("Výsledky", "Results"), systemImage: "folder")
             }
@@ -259,22 +327,33 @@ struct MainColumn: View {
 
     // MARK: - Kroky
 
+    /// Čtyři karty vedle sebe; když je na ně úzko (třeba s otevřeným nastavením), dvě a dvě.
     private var stepsRow: some View {
-        HStack(spacing: 12) {
-            ForEach(Runner.Step.allCases) { step in
-                let on = step.isOn(steps)
-                StepCard(step: step, detail: detail(step), isOn: on, locked: on && steps.count == 1) {
-                    guard !(on && steps.count == 1) else { NSSound.beep(); return }
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        step.set(&store.config.steps, !on)
-                    }
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                ForEach(Runner.Step.allCases) { stepCard($0) }
+            }
+            Grid(horizontalSpacing: 12, verticalSpacing: 12) {
+                GridRow { stepCard(.duplicates); stepCard(.iv) }
+                GridRow { stepCard(.pvp); stepCard(.rename) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .disabled(runner.isRunning)
         .opacity(runner.isRunning ? 0.55 : 1)
         .animation(.easeInOut(duration: 0.25), value: runner.isRunning)
+    }
+
+    private func stepCard(_ step: Runner.Step) -> some View {
+        let on = step.isOn(steps)
+        return StepCard(step: step, detail: detail(step), isOn: on, locked: on && steps.count == 1) {
+            guard !(on && steps.count == 1) else { NSSound.beep(); return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                step.set(&store.config.steps, !on)
+            }
+        }
+        // ViewThatFits porovnává ideální šířku: pod ~200 bodů na kartu se text láme po slovech
+        .frame(minWidth: 0, idealWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func detail(_ step: Runner.Step) -> String {
@@ -399,8 +478,61 @@ struct HeaderLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 6) {
             configuration.icon.font(.system(size: 15))
-            configuration.title.font(.system(size: 13))
+            configuration.title.font(.system(size: 13)).lineLimit(1).fixedSize()
         }
+    }
+}
+
+// MARK: - Přepnutí jazyka
+
+/// Prolnutí celého okna přes Core Animation: změna se provede naráz (jeden průchod SwiftUI) a starý
+/// obraz s novým prolne systém. SwiftUI animace by místo toho přepočítávala okno v každém snímku.
+@MainActor
+enum Crossfade {
+    static func run(in window: NSWindow? = nil, duration: Double = 0.22, _ change: () -> Void) {
+        let win = window ?? NSApp.keyWindow ?? NSApp.mainWindow
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+           let layer = (win?.contentView?.superview ?? win?.contentView)?.layer {
+            let fade = CATransition()
+            fade.type = .fade
+            fade.duration = duration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(fade, forKey: "crossfade")
+        }
+        var plain = Transaction()
+        plain.disablesAnimations = true
+        withTransaction(plain, change)
+    }
+}
+
+/// Změna jazyka: texty se přepíšou na místě (viz L10n) a staré s novými se prolnou.
+@MainActor
+enum LanguageSwitch {
+    static func change(to lang: AppLanguage, store: ConfigStore) {
+        guard lang != store.config.language else { return }
+        Crossfade.run(duration: 0.25) { store.config.language = lang }
+    }
+}
+
+/// Je obrazovka (Přehled / Statistiky) právě vidět? Skrytá nereaguje na klávesové zkratky.
+private struct PageActiveKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var pageActive: Bool {
+        get { self[PageActiveKey.self] }
+        set { self[PageActiveKey.self] = newValue }
+    }
+}
+
+/// Rozostření jen když je potřeba (okno se souhlasem). `.blur(radius: 0)` by celé okno pořád kreslilo
+/// přes další vrstvu, což s animovaným pozadím zbytečně zatěžovalo procesor.
+private struct BlurWhen: ViewModifier {
+    let on: Bool
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if on { content.blur(radius: 3) } else { content }
     }
 }
 

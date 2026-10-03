@@ -90,7 +90,7 @@ struct SettingsContent: View {
 
     private func section<Content: View>(_ key: String, _ title: String, _ symbol: String, _ summary: String,
                                         @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             Button { toggle(key) } label: {
                 HStack(spacing: 8) {
                     SoftIcon(symbol: symbol, size: 26, radius: 8)
@@ -111,7 +111,8 @@ struct SettingsContent: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.top, 8)
+                    .transition(.reveal)
             }
         }
     }
@@ -232,8 +233,8 @@ struct SettingsContent: View {
             leagueRow("great", $store.config.pvp.great)
             leagueRow("ultra", $store.config.pvp.ultra)
             leagueRow("master", $store.config.pvp.master)
-            Text(tr("Tag dostane kus s pořadím do zadaného čísla. Pořadí 1 = nejlepší IV pro ligu ze 4 096 kombinací, s nejlepší evolucí pod limit CP. Jeden kus může mít víc PvP tagů.",
-                    "A Pokémon gets the tag when its rank is within the number. Rank 1 = the best IVs for the league out of 4,096 combinations, using the best evolution under the CP cap. One Pokémon can get several PvP tags."))
+            Text(tr("Tag dostane kus s pořadím do zadaného čísla. Pořadí 1 = nejlepší IV pro ligu ze 4 096 kombinací pro poslední evoluci (při větvení tu nejlepší) pod limitem CP. Jeden kus může mít víc PvP tagů.",
+                    "A Pokémon gets the tag when its rank is within the number. Rank 1 = the best IVs for the league out of 4,096 combinations for the final evolution (the best branch, if it branches) under the CP cap. One Pokémon can get several PvP tags."))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -608,6 +609,50 @@ struct SettingsContent: View {
 }
 
 // MARK: - Komponenty
+
+/// Rozbalení sekce: karta se odkrývá shora dolů (výška roste od nuly), sekce pod ní plynule sjíždějí.
+extension AnyTransition {
+    static var reveal: AnyTransition {
+        .modifier(active: Reveal(progress: 0), identity: Reveal(progress: 1))
+    }
+}
+
+private struct Reveal: ViewModifier {
+    let progress: CGFloat
+
+    func body(content: Content) -> some View {
+        RevealLayout(progress: progress) { content }
+            .clipped()
+            .opacity(Double(min(1, progress * 1.6)))
+    }
+}
+
+/// Nahlásí jen `progress` z výšky obsahu a obsah přišpendlí nahoru (zbytek ořízne `clipped`).
+private struct RevealLayout: Layout {
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        // rozbaleno: jen průchod (stejný návrh velikosti = SwiftUI si změřené pamatuje, nic navíc)
+        if progress >= 1 { return child.sizeThatFits(proposal) }
+        let size = child.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        return CGSize(width: size.width, height: size.height * progress)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading,
+                              proposal: progress >= 1 ? proposal : ProposedViewSize(width: bounds.width, height: nil))
+    }
+
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout ()) -> CGFloat? { nil }
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout ()) -> CGFloat? { nil }
+}
 
 /// Sekce nastavení: ikona a nadpis, pod nimi karta.
 struct SettingsSection<Content: View>: View {

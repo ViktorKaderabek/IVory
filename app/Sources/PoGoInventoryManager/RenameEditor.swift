@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,6 +10,11 @@ struct RenameEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tokens: [NameToken] = []
     @State private var dragging: UUID?
+    @State private var bodyHeight: CGFloat = 560
+    @State private var visibleHeight: CGFloat = 560
+    /// Výška okna pod listem: list nesmí být vyšší (jinak by přečníval přes spodek okna).
+    @State private var parentHeight: CGFloat?
+    @State private var sheetHeight: CGFloat = 720
 
     init(config: Binding<RenameConfig>, samples: [NameSample]) {
         _config = config
@@ -19,13 +25,49 @@ struct RenameEditor: View {
     private var example: [String: String] { samples.first?.values ?? NameSample.design[0].values }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(tr("Šablona jména", "Name template")).font(.system(size: 20, weight: .semibold))
                 Text(tr("Kusům s IV \(rangeText) dám ve hře tohle jméno.", "Pokémon with IV \(rangeText) get this name in the game."))
                     .font(.system(size: 13)).foregroundStyle(Theme.muted)
             }
+            .padding(EdgeInsets(top: 24, leading: 24, bottom: 16, trailing: 24))
 
+            // Nadpis a tlačítka stojí, prostředek se posouvá, když se list do okna nevejde
+            // (dlouhá šablona, varování) – jinak by obsah přetekl nahoru i dolů za okraj listu.
+            ScrollView {
+                editorBody
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 2)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bodyHeight = $0 }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(minHeight: 160, idealHeight: scrollHeight, maxHeight: scrollHeight)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1).opacity(scrolls ? 1 : 0) }
+            .overlay(alignment: .bottom) { Rectangle().fill(Theme.border).frame(height: 1).opacity(scrolls ? 1 : 0) }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { visibleHeight = $0 }
+
+            footer.padding(EdgeInsets(top: 16, leading: 24, bottom: 24, trailing: 24))
+        }
+        .frame(width: 640)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sheetHeight = $0 }
+        .background(Theme.surface)
+        .background(ParentHeightReader(height: $parentHeight))
+        .foregroundStyle(Theme.text)
+        .animation(.snappy, value: overCount)
+    }
+
+    private var scrolls: Bool { bodyHeight > visibleHeight + 1 }
+
+    /// Prostředek je vysoký jako obsah, nejvýš tak, aby se celý list vešel do okna.
+    private var scrollHeight: CGFloat {
+        guard let parentHeight else { return bodyHeight }
+        let chrome = sheetHeight - visibleHeight   // nadpis + tlačítka
+        return max(160, min(bodyHeight, parentHeight - 24 - chrome))
+    }
+
+    private var editorBody: some View {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(tr("Šablona", "Template")).font(.system(size: 13, weight: .semibold))
@@ -67,27 +109,24 @@ struct RenameEditor: View {
             }
 
             preview
-
-            HStack {
-                Button(tr("Výchozí", "Default")) { withAnimation(.snappy) { tokens = RenameConfig.defaultTemplate } }
-                    .buttonStyle(GhostButtonStyle())
-                Spacer()
-                Button(tr("Zrušit", "Cancel")) { dismiss() }
-                    .buttonStyle(OutlineButtonStyle(color: Theme.text, stroke: Theme.border, hover: Theme.raise))
-                    .keyboardShortcut(.cancelAction)
-                Button(tr("Hotovo", "Done")) {
-                    config.template = tokens
-                    dismiss()
-                }
-                .buttonStyle(FilledButtonStyle())
-                .keyboardShortcut(.defaultAction)
-            }
         }
-        .padding(24)
-        .frame(width: 640)
-        .background(Theme.surface)
-        .foregroundStyle(Theme.text)
-        .animation(.snappy, value: overCount)
+    }
+
+    private var footer: some View {
+        HStack {
+            Button(tr("Výchozí", "Default")) { withAnimation(.snappy) { tokens = RenameConfig.defaultTemplate } }
+                .buttonStyle(GhostButtonStyle())
+            Spacer()
+            Button(tr("Zrušit", "Cancel")) { dismiss() }
+                .buttonStyle(OutlineButtonStyle(color: Theme.text, stroke: Theme.border, hover: Theme.raise))
+                .keyboardShortcut(.cancelAction)
+            Button(tr("Hotovo", "Done")) {
+                config.template = tokens
+                dismiss()
+            }
+            .buttonStyle(FilledButtonStyle())
+            .keyboardShortcut(.defaultAction)
+        }
     }
 
     private var rangeText: String { pctRange(config.min, config.max) }
@@ -219,6 +258,46 @@ struct RenameEditor: View {
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border))
         }
+    }
+}
+
+/// Zjistí výšku okna, nad kterým list visí, a hlídá ji i při změně velikosti okna.
+private struct ParentHeightReader: NSViewRepresentable {
+    @Binding var height: CGFloat?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ReaderView()
+        view.report = { h in DispatchQueue.main.async { if height != h { height = h } } }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ReaderView: NSView {
+        var report: ((CGFloat) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard window != nil else { return }
+            // v tuhle chvíli list ještě nemusí být k oknu připojený (sheetParent je nil)
+            DispatchQueue.main.async { [weak self] in self?.attach() }
+        }
+
+        private func attach() {
+            guard let sheet = window,
+                  let parent = sheet.sheetParent ?? NSApp.windows.first(where: { $0.attachedSheet === sheet })
+                    ?? NSApp.mainWindow.flatMap({ $0 === sheet ? nil : $0 }) else { return }
+            report?(parent.contentLayoutRect.height)
+            observer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: parent,
+                                                              queue: .main) { [weak self, weak parent] _ in
+                if let parent { self?.report?(parent.contentLayoutRect.height) }
+            }
+        }
+
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 }
 

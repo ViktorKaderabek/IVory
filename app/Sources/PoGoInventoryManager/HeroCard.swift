@@ -194,13 +194,9 @@ struct StatusPill: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(dot)
+            PulsingCircle(fill: dot, glow: state == .running ? dot : nil, glowRadius: 5,
+                          blinkTo: 0.3, duration: 0.8, animate: state == .running && !reduceMotion)
                 .frame(width: 8, height: 8)
-                .shadow(color: state == .running ? dot : .clear, radius: 5)
-                .phaseAnimator([false, true]) { view, phase in
-                    view.opacity(state == .running && !reduceMotion && phase ? 0.3 : 1)
-                } animation: { _ in .easeInOut(duration: 0.8) }
             Text(text)
                 .font(.system(size: 12, weight: .semibold))
                 .tracking(0.5)
@@ -272,10 +268,10 @@ struct HeroCheckbox: View {
 // MARK: - Pozadí se světly
 
 /// Tři rozostřená světla, která plují. Při běhu zrychlí (16 s → 5 s), při zastavení zmrznou.
+/// Animuje je Core Animation (HeroLights), aplikace mezi snímky nic nepočítá.
 struct HeroBackground: View {
     let state: HeroState
     let reduceMotion: Bool
-    @State private var clock = DriftClock()
 
     private struct Look {
         let colors: [Color]
@@ -299,60 +295,12 @@ struct HeroBackground: View {
 
     var body: some View {
         let look = look
-        TimelineView(.animation(paused: reduceMotion || look.paused)) { context in
-            let p = reduceMotion ? 0 : clock.advance(to: context.date, duration: look.duration, paused: look.paused)
-            GeometryReader { geo in
-                ZStack(alignment: .topLeading) {
-                    LinearGradient(colors: [Theme.nightSection, .oklch(0.177, 0.031, 279)],
-                                   startPoint: UnitPoint(x: 0.1, y: 0), endPoint: UnitPoint(x: 0.9, y: 1))
-                    ZStack(alignment: .topLeading) {
-                        blob(look.colors[0], size: 340, left: -0.08, top: 0.35, in: geo.size,
-                             keys: [(70, 24, 1.18), (-30, 40, 0.94)], phase: p)
-                        blob(look.colors[1], size: 380, left: 0.32, top: -0.45, in: geo.size,
-                             keys: [(-80, 30, 0.9), (-20, -30, 1.15)], phase: p / 1.2)
-                        blob(look.colors[2], size: 360, left: 0.68, top: 0.10, in: geo.size,
-                             keys: [(40, -40, 1.2), (-60, 10, 1)], phase: p / 0.9)
-                    }
-                    .opacity(look.opacity)
-                }
-            }
+        ZStack {
+            LinearGradient(colors: [Theme.nightSection, .oklch(0.177, 0.031, 279)],
+                           startPoint: UnitPoint(x: 0.1, y: 0), endPoint: UnitPoint(x: 0.9, y: 1))
+            HeroLights(colors: look.colors, opacity: look.opacity,
+                       speed: reduceMotion || look.paused ? 0 : 16 / look.duration)
         }
-        .animation(.easeInOut(duration: 0.6), value: state)
-    }
-
-    /// Klíčové snímky z návrhu: 0 % → 50 % → 100 %, tam a zpět (ease-in-out, alternate).
-    private func blob(_ color: Color, size: CGFloat, left: CGFloat, top: CGFloat, in box: CGSize,
-                      keys: [(CGFloat, CGFloat, CGFloat)], phase: Double) -> some View {
-        let cycle = phase.truncatingRemainder(dividingBy: 2)
-        let linear = cycle <= 1 ? cycle : 2 - cycle
-        let t = (1 - cos(linear * .pi)) / 2
-        let frames: [(CGFloat, CGFloat, CGFloat)] = [(0, 0, 1)] + keys
-        let seg = t < 0.5 ? 0 : 1
-        let local = CGFloat(t < 0.5 ? t * 2 : (t - 0.5) * 2)
-        let a = frames[seg], b = frames[seg + 1]
-        let dx = a.0 + (b.0 - a.0) * local
-        let dy = a.1 + (b.1 - a.1) * local
-        let sc = a.2 + (b.2 - a.2) * local
-        return Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .scaleEffect(sc)
-            .blur(radius: 56)
-            .offset(x: box.width * left + dx, y: box.height * top + dy)
-    }
-}
-
-/// Fáze plujících světel. Fáze se přičítá po snímcích, takže změna rychlosti neskočí.
-final class DriftClock {
-    private var phase = 0.0
-    private var last: Date?
-
-    func advance(to date: Date, duration: Double, paused: Bool) -> Double {
-        defer { last = date }
-        guard let last, !paused else { return phase }
-        let dt = min(0.1, max(0, date.timeIntervalSince(last)))
-        phase += dt / duration
-        return phase
     }
 }
 
@@ -363,6 +311,7 @@ struct StartButton: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pageActive) private var pageActive
     let steps: Steps
     let fresh: Bool
     @State private var hovering = false
@@ -384,7 +333,7 @@ struct StartButton: View {
             .contentShape(Circle())
         }
         .buttonStyle(PressableStyle())
-        .keyboardShortcut(.defaultAction)
+        .keyboardShortcut(pageActive ? .defaultAction : nil)   // na skryté obrazovce Enter nic nespustí
         .onHover { h in withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { hovering = h } }
         .animation(.spring(response: 0.4, dampingFraction: 0.75), value: runner.isRunning)
         .help(runner.isRunning ? tr("Zastavit (výsledky se uloží)", "Stop (results are saved)") : tr("Spustit (Enter)", "Start (Enter)"))
@@ -420,48 +369,15 @@ struct StartButton: View {
         }
     }
 
-    @ViewBuilder private var rings: some View {
-        if runner.isRunning {
-            TimelineView(.animation(paused: reduceMotion)) { context in
-                let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-                ZStack {
-                    ripple(t, delay: 0)
-                    ripple(t, delay: 1.3)
-                    Circle()
-                        .strokeBorder(AngularGradient(stops: [
-                            .init(color: .clear, location: 0), .init(color: .clear, location: 0.6),
-                            .init(color: Theme.lightTeal, location: 0.86), .init(color: Theme.white, location: 1),
-                        ], center: .center), lineWidth: 4)
-                        .rotationEffect(.degrees(t.truncatingRemainder(dividingBy: 1.6) / 1.6 * 360 - 90))
-                }
+    /// Kruhy kolem tlačítka (animuje je Core Animation, viz StartRings).
+    private var rings: some View {
+        ZStack {
+            if !runner.isRunning {
+                Circle().strokeBorder(.white.opacity(0.22), lineWidth: 1).transition(.opacity)
             }
-            .transition(.opacity)
-        } else {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.22), lineWidth: 1)
-                if !reduceMotion {
-                    TimelineView(.animation) { context in
-                        let p = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
-                        let e = 1 - pow(1 - p, 2)  // ease-out
-                        Circle()
-                            .strokeBorder(.white.opacity(0.5), lineWidth: 2)
-                            .scaleEffect(0.97 + 0.23 * e)
-                            .opacity(0.9 * (1 - e))
-                    }
-                }
-            }
-            .transition(.opacity)
+            StartRings(running: runner.isRunning, reduceMotion: reduceMotion)
+                .allowsHitTesting(false)
         }
-    }
-
-    /// Radarová vlna: z 0,85× na 2,1×, vybledne (2,6 s).
-    private func ripple(_ t: Double, delay: Double) -> some View {
-        let p = ((t - delay).truncatingRemainder(dividingBy: 2.6) + 2.6).truncatingRemainder(dividingBy: 2.6) / 2.6
-        let e = 1 - pow(1 - p, 2)
-        return Circle()
-            .strokeBorder(Theme.lightTeal, lineWidth: 1)
-            .scaleEffect(0.85 + 1.25 * e)
-            .opacity(reduceMotion ? 0 : 0.7 * (1 - e))
     }
 }
 

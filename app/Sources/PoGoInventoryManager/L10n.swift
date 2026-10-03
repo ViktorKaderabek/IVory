@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Jazyk aplikace i výpisu bota: čeština, nebo angličtina (výchozí podle systému). Ukládá se v config.json
 /// („language“), takže ho čte i bot.
@@ -18,9 +19,21 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
 
 enum L10n {
     /// Aktuální jazyk – nastavuje ho ConfigStore při načtení a při každé změně nastavení.
-    static var lang: AppLanguage = .en
+    /// Je sledovaný (Observation): pohled, který při vykreslení zavolá `tr()`, se po změně jazyka sám
+    /// překreslí. Okno se proto při přepnutí jazyka nemusí celé stavět znovu (to trvalo ~300 ms).
+    static var lang: AppLanguage {
+        get { current.lang }
+        set { if current.lang != newValue { current.lang = newValue } }
+    }
 
     static var locale: Locale { Locale(identifier: lang == .cs ? "cs_CZ" : "en_US") }
+
+    @Observable
+    final class Current: @unchecked Sendable {
+        var lang: AppLanguage = .en
+    }
+
+    private static let current = Current()
 }
 
 /// Text v aktuálním jazyce: `tr("Spustit", "Start")`.

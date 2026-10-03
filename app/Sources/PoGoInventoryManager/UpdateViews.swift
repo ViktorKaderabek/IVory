@@ -159,7 +159,8 @@ struct LanguageUpdateCard: View {
                 SoftIcon(symbol: "globe", size: 26, radius: 8)
                 Text(tr("Jazyk", "Language")).font(.system(size: 14, weight: .medium))
                 Spacer()
-                Picker("", selection: $store.config.language) {
+                Picker("", selection: Binding(get: { store.config.language },
+                                              set: { LanguageSwitch.change(to: $0, store: store) })) {
                     ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)

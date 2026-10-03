@@ -30,6 +30,16 @@ enum SnapshotExport {
                 .environment(\.colorScheme, scheme)
             code |= save(settings, scheme, dir.appendingPathComponent("settings_\(name).png"))
             UserDefaults.standard.set(saved, forKey: "settingsOpenSections")
+            for (suffix, data) in [("", InventoryStats.load(removeTag: store.config.removeTag)), ("_empty", InventoryStats())] {
+                let stats = StatsView(preloaded: data) {}
+                    .padding(EdgeInsets(top: 22, leading: 28, bottom: 26, trailing: 28))
+                    .frame(width: 1040)
+                    .background(Theme.bg)
+                    .foregroundStyle(Theme.text)
+                    .environmentObject(store).environmentObject(runner)
+                    .environment(\.colorScheme, scheme)
+                code |= save(stats, scheme, dir.appendingPathComponent("stats\(suffix)_\(name).png"))
+            }
             let editor = RenameEditor(config: .constant(store.config.rename), samples: NameSample.design)
                 .environment(\.colorScheme, scheme)
             code |= save(editor, scheme, dir.appendingPathComponent("editor_\(name).png"))

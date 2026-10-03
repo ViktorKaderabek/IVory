@@ -77,6 +77,8 @@ final class Runner: ObservableObject {
     @Published private(set) var status = ""
     @Published private(set) var outcome: Outcome?
     @Published private(set) var stats = Stats()
+    /// Jak daleko je právě běžící fáze (0–1), když to bot hlásí (čtení IV: „scan“ s n/total); jinak nil.
+    @Published private(set) var phaseProgress: Double?
     @Published private(set) var activity = ""
     @Published private(set) var startedAt: Date?
     @Published private(set) var finishedAt: Date?
@@ -134,6 +136,7 @@ final class Runner: ObservableObject {
         }
 
         stats = Stats()
+        phaseProgress = nil
         tagCounts = [:]
         boxTotal = 0
         lastTagChange = nil
@@ -222,8 +225,14 @@ final class Runner: ObservableObject {
         case "step":
             if let t = e["text"] as? String { activity = t }
         case "phase":
-            if let n = e["n"] as? Int { stats.phase = n }
+            if let n = e["n"] as? Int, n != stats.phase {
+                stats.phase = n
+                phaseProgress = nil
+            }
         case "scan":
+            if e["what"] as? String == "iv", let n = e["n"] as? Int, let total = e["total"] as? Int, total > 0 {
+                phaseProgress = min(1, Double(n) / Double(total))
+            }
             if e["what"] as? String == "iv", e["iv"] as? [Int] != nil, let n = e["n"] as? Int {
                 let key = "\(stats.phase):\(n)"
                 if !measuredSeen.contains(key) {
@@ -313,7 +322,7 @@ final class Runner: ObservableObject {
         ]
         lines.removeAll()
         isRunning = false; outcome = nil; activity = ""; lastTagChange = nil
-        stats = Stats(); tagCounts = [:]; boxTotal = 0; startedAt = nil; finishedAt = nil
+        stats = Stats(); phaseProgress = nil; tagCounts = [:]; boxTotal = 0; startedAt = nil; finishedAt = nil
         for l in sample { lines.append(LogLine(id: nextId, text: l)); nextId += 1 }
         let now = Date()
         steps = Steps(duplicates: true, iv: true, pvp: true, rename: true)
@@ -324,6 +333,7 @@ final class Runner: ObservableObject {
         case "running":
             isRunning = true
             stats = Stats(measured: 98, removable: 38, ivTagged: 233, errors: 1, phase: 2)
+            phaseProgress = 0.46
             tagCounts = counts.mapValues { $0 / 2 }
             boxTotal = 499
             lastTagChange = ("90-95% Amazing", 1)

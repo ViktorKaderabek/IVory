@@ -244,6 +244,11 @@ class NotInSearch(StepError):
     """Pokémon ve výsledcích hledání podle CP není (CP se nejspíš přečetlo špatně)."""
 
 
+class NotOnScreen(StepError):
+    """Kus ze seznamu na obrazovce není, i když by tam podle sousedů měl být (zdvojená buňka z posouvání,
+    nebo je za koncem seznamu) – vynechá se bez návratu na začátek."""
+
+
 class NoNavigation(StepError):
     """V appraisalu nejde přejít na dalšího Pokémona – rychlý režim nejde, použije se pomalý."""
 
@@ -513,9 +518,32 @@ def name_of(texts, cell):
     return re.sub(r"^[^A-Za-zÀ-ž0-9]+", "", best).strip() if best else ""
 
 
+def split_names(texts):
+    """OCR spojí dlouhé přezdívky celého řádku mřížky do jednoho textu („• MAX 3159 L18 •MAX 1675 L7
+    •MAX 3184L22“ přes celou šířku). Takový text se rozdělí podle teček tagů na jména a každé dostane
+    polohu podle toho, kde v textu leží – jinak by celý řádek dostala prostřední buňka a krajní nic."""
+    out = []
+    for t in texts:
+        s = t["text"]
+        if t["x1"] - t["x0"] < 0.42 or s.count("•") < 1:
+            out.append(t)
+            continue
+        parts = [(m.start(), m.group()) for m in re.finditer(r"[^•]+", s) if m.group().strip()]
+        if len(parts) < 2:
+            out.append(t)
+            continue
+        w = t["x1"] - t["x0"]
+        for start, part in parts:
+            a, b = start / len(s), (start + len(part)) / len(s)
+            out.append(dict(t, text=part.strip(), x0=t["x0"] + a * w, x1=t["x0"] + b * w,
+                            cx=t["x0"] + (a + b) / 2 * w))
+    return out
+
+
 def with_details(cells, fr):
+    texts = split_names(fr.texts)
     for c in cells:
-        c["name"] = name_of(fr.texts, c)
+        c["name"] = name_of(texts, c)
         c["sprite"] = sprite_of(fr.img, c)
         c["sig"] = f"{c['cp']}|{alnum(c['name'])}"
     return cells
@@ -2208,17 +2236,18 @@ class Report:
 
 # ---------------------------- měření ---------------------------------
 def check_detail(bot, fr, cell):
-    """Ověří, že se otevřel správný Pokémon (CP, případně jméno)."""
-    end = time.time() + 1.5
+    """Ověří, že se otevřel správný Pokémon (CP, případně jméno). Když CP nahoře v detailu není vidět
+    (detail ještě dojíždí, nebo ho zakrývá oznámení z jiné aplikace), čeká se déle; jiné CP je chyba hned."""
+    t0 = time.time()
     cp, wrong = None, 0
     while True:
         cp, nm = detail_cp(fr.texts), detail_name(fr.texts)
         if cp == cell["cp"]:
             return fr
-        if cp is None and nm and cell["name"] and alnum(nm) == alnum(cell["name"]) and time.time() > end - 0.75:
+        if cp is None and nm and cell["name"] and alnum(nm) == alnum(cell["name"]) and time.time() > t0 + 0.75:
             return fr
         wrong += cp is not None
-        if wrong >= 3 or time.time() > end:
+        if wrong >= 3 or time.time() > t0 + (1.5 if wrong else 5.0):
             raise StepError(T(f"otevřel se jiný Pokémon (CP{cp} místo CP{cell['cp']})",
                               f"a different Pokémon opened (CP{cp} instead of CP{cell['cp']})"))
         fr = bot.frame(after=fr.t + 0.005)
@@ -2997,6 +3026,7 @@ class FastState:
         self.phantom = set()     # buňky seznamu, které ve hře nejsou (zdvojené při posouvání)
         self.extra = []          # přečtení Pokémoni, kteří v seznamu chybí
         self.scan_fail = {}      # index -> kolikrát se od něj nepodařilo číst
+        self.skipped = set()     # kusy, které se opakovaně nedařilo otevřít (ve hře nejspíš jsou)
         self.cache_hits = 0      # kolik kusů se vzalo z paměti (minulý běh) místo čtení
 
 
@@ -3055,23 +3085,6 @@ def merge_by_shift(seq, prev, cells, shift):
     seq.extend(c for c in cells if c["cy"] + shift > bottom + 0.06)
 
 
-def locate(seq, cells, hint=0):
-    """Index v seq, kde začíná obrazovka cells (podle pořadí CP a jmen), nebo None.
-    Hledá nejdřív kolem nápovědy, pak v celém seznamu."""
-    near = _locate(seq, cells, range(max(0, hint - 8), min(len(seq), hint + 40)))
-    return near if near is not None else _locate(seq, cells, range(len(seq)))
-
-
-def _locate(seq, cells, offsets):
-    best = None
-    need = max(min(2, len(cells)), int(0.7 * len(cells)))   # výsledek hledání může mít jen 1 buňku
-    for o in offsets:
-        n = sum(1 for i, c in enumerate(cells) if o + i < len(seq) and same_cell(seq[o + i], c))
-        if n >= need and (best is None or n > best[1]):
-            best = (o, n)
-    return best[0] if best else None
-
-
 def grid_scan(bot):
     """Projede seznam shora dolů (jen posouvání) a vrátí všechny buňky v pořadí."""
     require_top(bot)
@@ -3097,23 +3110,69 @@ def grid_scan(bot):
     return seq
 
 
+def screen_pairs(vseq, cells, hint=None):
+    """Které buňky obrazovky jsou které kusy vseq: {index buňky: index ve vseq}, nebo {}, když se
+    obrazovka v seznamu nenajde. Páruje nejdelší společnou posloupností (match_view), takže buňka
+    navíc nebo chybějící (zdvojená / přehlédnutá při posouvání, vynechaná) orientaci nerozbije.
+    Páry daleko od ostatních (náhodou stejné CP jinde v seznamu) se zahodí."""
+    need = max(min(2, len(cells)), int(0.6 * len(cells)))
+    for lo in ([max(0, hint - 8)] if hint else []) + [0]:
+        pairs = match_view(vseq, cells, lo)
+        if pairs:
+            offs = sorted(v - k for k, v in pairs.items())
+            mid = offs[len(offs) // 2]
+            pairs = {k: v for k, v in pairs.items() if abs(v - k - mid) <= 3}
+        if len(pairs) >= need:
+            return pairs
+    return {}
+
+
+def scroll_back(bot, cells, k, rows):
+    """Vrátí seznam o rows řádků nad buňkou cells[k] – pomalým tahem s podržením (rychlý tah dolů by
+    na začátku seznamu inventář zavřel)."""
+    ys = sorted({round(c["cy"], 2) for c in cells})
+    gaps = [b - a for a, b in zip(ys, ys[1:]) if b - a > 0.08]
+    pitch = gaps[len(gaps) // 2] if gaps else 0.166
+    dist = 0.40 - (cells[k]["cy"] - rows * pitch)          # hledaný řádek kousek pod horní okraj
+    back = min(0.30, max(0.05, dist / bot.scroll_gain))
+    bot.drag((0.5, 0.42), (0.5, 0.42 + back), T("zpět nahoru", "back up"), ms=int(250 + 700 * back), hold=0.3)
+
+
 def open_cell(bot, seq, idx, skip=()):
-    """Najde v seznamu Pokémona seq[idx] a otevře jeho detail (hledá od aktuální polohy dolů).
-    skip = buňky, které ve hře nejsou (zdvojené při posouvání) – při hledání se vynechají."""
+    """Najde v seznamu Pokémona seq[idx] a otevře jeho detail (hledá od aktuální polohy dolů; když je
+    kousek nad obrazovkou, seznam vrátí). skip = buňky, které ve hře nejsou (zdvojené při posouvání).
+    Když na obrazovce chybí, ač by tam podle sousedů měl být (nebo by byl až za koncem seznamu),
+    vyhodí NotOnScreen – nejspíš je to zdvojená buňka a dá se pokračovat bez návratu na začátek."""
     view = [k for k in range(len(seq)) if k not in skip or k == idx]
     vseq, vidx = [seq[k] for k in view], view.index(idx)
-    hint = 0
+    gone = NotOnScreen(T(f"kus č. {idx + 1} (CP{seq[idx]['cp']}) na obrazovce není, i když by tam měl být",
+                         f"no. {idx + 1} (CP{seq[idx]['cp']}) isn't on the screen although it should be"))
+    hint, backs = None, 0
     while True:
         cells, fr = read_grid(bot)
-        off = locate(vseq, cells, hint)
-        if off is not None and off <= vidx < off + len(cells):
-            return open_detail(bot, cells[vidx - off])
-        if off is not None and off > vidx:
-            raise LostPosition(T("Pokémon, u kterého se má pokračovat, je výš v seznamu",
-                                 "the Pokémon to continue from is higher up in the list"))
+        pairs = screen_pairs(vseq, cells, hint)
+        if pairs:
+            k = next((k for k, v in pairs.items() if v == vidx), None)
+            if k is not None:
+                return open_detail(bot, cells[k])
+            first = min(pairs, key=pairs.get)
+            if pairs[first] > vidx:              # hledaný kus je nad obrazovkou
+                if backs >= 4:
+                    raise LostPosition(T("Pokémon, u kterého se má pokračovat, je výš v seznamu",
+                                         "the Pokémon to continue from is higher up in the list"))
+                backs += 1
+                scroll_back(bot, cells, first, (pairs[first] - vidx + 2) // 3)
+                hint = max(0, vidx - 6)
+                continue
+            if max(pairs.values()) > vidx:
+                raise gone
+            hint = pairs[first] - first
         if not scroll_next(bot, cells):
+            if pairs:
+                raise gone                       # konec seznamu – kus by byl až za ním
             raise StepError(T(f"Pokémona č. {idx + 1} v seznamu nenacházím", f"can't find Pokémon no. {idx + 1} in the list"))
-        hint = (off if off is not None else hint) + max(1, len(cells) - 3)
+        if hint is not None:
+            hint += max(1, len(cells) - 3)
 
 
 def detail_fp(fr):
@@ -3243,7 +3302,7 @@ def drop_phantoms(st, total):
     (zdvojené při posouvání), vyhodí a kusy, které při posouvání chyběly, vloží na jejich místo
     (pak jdou otagovat přes hledání podle CP jako ostatní). Vrací počet vyhozených buněk."""
     gone = {k for k in st.phantom if k < total and k not in st.recs}
-    st.phantom = set()
+    st.phantom, st.skipped = set(), set()
     st.scan_fail = {}
     extra, st.extra = st.extra, []
     if not gone and not extra:
@@ -3277,12 +3336,13 @@ def drop_phantoms(st, total):
 
 def at_end(bot, st, last, total):
     """Šipka ▶ ani swipe nikam nevedou: je to poslední Pokémon v boxu? Když je známý počet z hlavičky
-    boxu, musí být přečtení všichni; jinak smí zbýt nejvýš pár buněk (zdvojené na konci seznamu)."""
+    boxu, musí být přečtení všichni (kromě vynechaných, které nešly otevřít); jinak smí zbýt nejvýš
+    pár buněk (zdvojené na konci seznamu)."""
     left = [k for k in unread(st, total) if k > last]
     if not left:
         return True
     if bot.shown_count and total == len(st.seq):
-        return len(st.recs) + len(st.extra) >= bot.shown_count
+        return len(st.recs) + len(st.extra) + len(st.skipped) >= bot.shown_count
     return len(left) <= 3
 
 
@@ -3302,13 +3362,20 @@ def scan_details(bot, st, upto=None):
             log(T(f"   kus č. {start + 1} (CP{st.seq[start]['cp']}) se nedaří otevřít, vynechávám ho",
                   f"   can't open no. {start + 1} (CP{st.seq[start]['cp']}), skipping it"))
             st.phantom.add(start)
+            st.skipped.add(start)
             continue
-        st.scan_fail[start] = st.scan_fail.get(start, 0) + 1
         if first_segment:
-            require_top(bot)
+            require_top(bot)                     # návrat na začátek (NeedTop) není nepovedený pokus
             first_segment = False
+        st.scan_fail[start] = st.scan_fail.get(start, 0) + 1
         step(T("Čtu IV: ", "Reading IV: ") + f"{len(st.recs) + 1}/{expected}")
-        fr = open_cell(bot, st.seq, start, st.phantom)
+        try:
+            fr = open_cell(bot, st.seq, start, st.phantom)
+        except NotOnScreen as e:
+            log(f"   ({e})")
+            if st.scan_fail[start] >= 2:         # ani napodruhé – buňka ve hře není, dál bez ní
+                st.phantom.add(start)
+            continue                             # znovu z místa, kde seznam právě je
         open_detail_menu(bot, fr)
         t, fr = bot.stable_text([L["appraise"]], exact=True, region=(0.4, 0.55, 1.0, 0.92))
         if t is None:
@@ -3951,14 +4018,22 @@ def same_name(a, b):
 
 def from_memory(st, mem):
     """Opakovaný běh: kusy, které bot zná z minula (v seznamu stejné CP a jméno a v paměti právě jeden
-    takový), nečte znovu – IV, typy, HP a tagy vezme z paměti. Vrací počet takových kusů."""
+    takový), nečte znovu – IV, typy, HP a tagy vezme z paměti. Jméno se srovná se jménem z mřížky
+    i z detailu (v mřížce minule mohlo chybět). Vrací počet takových kusů."""
     by_cp = {}
     for it in mem.box_items():
         if it.get("iv"):
             by_cp.setdefault(it.get("gcp"), []).append(it)
     hits = {}
+    cp_count = {}
+    for c in st.seq:
+        cp_count[c["cp"]] = cp_count.get(c["cp"], 0) + 1
     for i, c in enumerate(st.seq):
-        cands = [it for it in by_cp.get(c["cp"], []) if same_name(c["name"], it.get("gname") or "")]
+        known = by_cp.get(c["cp"], [])
+        cands = [it for it in known
+                 if same_name(c["name"], it.get("gname") or "") or same_name(c["name"], it.get("name") or "")]
+        if not cands and not alnum(c["name"]) and len(known) == 1 and cp_count[c["cp"]] == 1:
+            cands = known              # jméno OCR nepřečetlo – CP je v seznamu i v paměti jen jednou
         if len(cands) == 1:
             hits[i] = cands[0]
     uses = {}
@@ -4006,7 +4081,8 @@ def remember_box(st, mem, whole, complete=False):
         it = {k: rec.get(k) for k in CACHE_KEYS}
         it["iv"] = list(rec["iv"])
         it["t"] = rec.get("t") or now
-        it["gcp"], it["gname"] = cell["cp"], cell.get("name") or ""
+        # jméno z mřížky (podle něj se kus příště pozná); když ho OCR nepřečetlo, to z detailu
+        it["gcp"], it["gname"] = cell["cp"], cell.get("name") or rec.get("name") or ""
         items.append(it)
     if not (whole and complete):
         by_cp, by_iv = {}, set()
@@ -4030,6 +4106,61 @@ def remember_box(st, mem, whole, complete=False):
     mem.set_box(items)
 
 
+def read_missing(bot, st, todo):
+    """Opakovaný běh: přečte jen kusy, které bot nezná (nové, nebo se nespárovaly s pamětí). Hledání
+    podle CP ukáže jen je, otevírají se po jednom (jako při přejmenování) – celý seznam se neprojíždí.
+    Kus, který ve výsledcích není (zdvojená buňka z posouvání, špatně přečtené CP), se z seznamu vyřadí."""
+    pending = [k for k in todo if k not in st.recs and k not in st.phantom]
+    total = len(st.seq)
+    while pending:
+        batch = pending[:SEARCH_BATCH]
+        query, view = search_view(st.seq, batch)
+        vseq, vpos = [st.seq[k] for k in view], {k: n for n, k in enumerate(view)}
+        show_search(bot, query)
+        lost = empty_search(bot, st.seq, batch, query)
+        if lost is not None:
+            st.phantom.update(lost)
+            pending = [k for k in pending if k not in st.phantom and k not in st.recs]
+            continue
+        nav = {"lo": 0, "top": True}
+        for k in batch:
+            if k in st.recs or k not in vpos or k in st.phantom:
+                continue
+            if st.scan_fail.get(k, 0) >= 2:    # opakovaně se nedaří otevřít – vynechat, ať běh nestojí
+                log(T(f"   kus č. {k + 1} (CP{st.seq[k]['cp']}) se nedaří otevřít, vynechávám ho",
+                      f"   can't open no. {k + 1} (CP{st.seq[k]['cp']}), skipping it"))
+                st.phantom.add(k)
+                st.skipped.add(k)
+                continue
+            st.scan_fail[k] = st.scan_fail.get(k, 0) + 1
+            n = len(st.recs) + 1
+            step(T("Čtu IV: ", "Reading IV: ") + f"{n}/{total}")
+            try:
+                fr = open_in_view(bot, vseq, vpos[k], nav)
+            except NotInSearch:
+                st.phantom.add(k)      # ve hře takový kus není (zdvojená buňka ze seznamu)
+                continue
+            fr = bot.settle(fr)
+            rec = read_here(bot, fr, None)
+            iv, fr = appraise(bot, fr, st.seq[k]["cp"])
+            rec["iv"] = tuple(iv) if iv else None
+            if rec["cp"] is None:
+                rec["cp"] = st.seq[k]["cp"]
+            rec["t"] = time.time()
+            st.recs[k] = rec
+            bot.progress += 1
+            ivs = "/".join(map(str, iv)) if iv else "?"
+            log(f"   {n}/{total} CP{rec['cp']} {rec['name']}: IV {ivs}" +
+                (f" · {', '.join(rec['have'])}" if rec["have"] else ""))
+            emit("scan", what="iv", n=n, total=total, cp=rec["cp"], name=rec["name"],
+                 iv=list(iv) if iv else None)
+            close_detail(bot, fr)
+        pending = [k for k in pending if k not in st.recs and k not in st.phantom]
+    gone = drop_phantoms(st, total)
+    if gone:
+        log(T(f"   seznam srovnán: {gone} zdvojených buněk vyhozeno", f"   list cleaned up: {gone} doubled cells dropped"))
+
+
 def ensure_scanned(bot, st, mem=None):
     """Celý box přečtený (seznam + IV a tagy každého kusu) – pro IV tagy, PvP tagy i přejmenování.
     Kusy, které bot zná z minulého běhu (stejné CP i jméno), se nečtou znovu."""
@@ -4046,7 +4177,10 @@ def ensure_scanned(bot, st, mem=None):
                 emit("info", text=T(f"Z paměti: {pokemon_count(st.cache_hits)}, čtu jen {pokemon_count(left)}.",
                                     f"From memory: {pokemon_count(st.cache_hits)}, reading just {pokemon_count(left)}."))
     if not st.scanned:
-        if bot.fast:
+        todo = unread(st, len(st.seq))
+        if st.cache_hits and len(todo) <= max(30, len(st.seq) // 8):
+            read_missing(bot, st, todo)        # pár nových kusů – přes hledání, ne celým seznamem
+        elif bot.fast:
             scan_details(bot, st)
         else:
             scan_details_slow(bot, st)
@@ -4205,14 +4339,26 @@ def rename_here(bot, fr, new):
     return old
 
 
-def open_in_view(bot, vseq, vidx, nav):
+def open_in_view(bot, vseq, vidx, nav, loose=False):
     """Ve výsledcích hledání najde Pokémona vseq[vidx] (od aktuální polohy dolů) a otevře jeho detail.
     nav = poloha v seznamu ({"lo": odkud párovat, "top": seznam je nahoře}). Když ve výsledcích
-    není, vyhodí NotInSearch – hledá se dál od stejného místa."""
+    není, vyhodí NotInSearch – hledá se dál od stejného místa.
+    loose: kusy se stejným číslem i CP hra ve výsledcích nemusí řadit jako v celém seznamu – když se
+    vseq[vidx] nespáruje, otevře se jediná nespárovaná buňka se stejným CP a jménem (kdo to je, ověří
+    volající v detailu)."""
     while True:
         cells, fr = read_grid(bot)
         pairs = match_view(vseq, cells, nav["lo"])
         k = next((k for k, v in pairs.items() if v == vidx), None)
+        if k is None and loose:
+            free = [k for k, c in enumerate(cells) if k not in pairs and same_cell(vseq[vidx], c)]
+            k = free[0] if len(free) == 1 else None
+        want = vseq[vidx]
+        if loose and k is not None and alnum(cells[k]["name"]) and not names_ok(want["name"], cells[k]["name"]):
+            # same_cell u spodních buněk jména nesrovnává – ze dvou kusů se stejným CP vybrat ten se správným jménem
+            named = [j for j, c in enumerate(cells) if c["cp"] == want["cp"] and alnum(c["name"]) and
+                     names_ok(want["name"], c["name"])]
+            k = named[0] if len(named) == 1 else k
         if k is not None:
             return open_detail(bot, cells[k])
         if not pairs:
@@ -4224,6 +4370,27 @@ def open_in_view(bot, vseq, vidx, nav):
             raise NotInSearch(T(f"CP{vseq[vidx]['cp']} ve výsledcích hledání není", f"CP{vseq[vidx]['cp']} isn't in the search results"))
         nav["top"] = False
         nav["lo"] = next_lo(cells, pairs, nav["lo"])
+
+
+def is_piece(fr, rec):
+    """Je otevřený detail tenhle kus? Hledání podle CP ukáže i jiné kusy se stejným CP (dva Kyuremové
+    s CP 2013) a buňka se může spárovat špatně – jméno by pak dostal jiný kus, spočítané z cizích IV."""
+    tx = fr.texts
+    cp, name, hp = detail_cp(tx), detail_name(tx), detail_hp(tx)
+    if cp is not None and cp != rec["cp"]:
+        return False
+    if name and rec.get("name") and not same_name(name, rec["name"]):
+        return False
+    return not (hp and rec.get("hp") and hp != rec["hp"])
+
+
+def opened_todo(fr, st, vpos):
+    """Pozice v st.rename_todo kusu, jehož detail je otevřený: přednostně ten, na který se klepalo (0),
+    jinak jiný kus z výsledků hledání se stejným CP, jménem i HP. None = kus, který se nepřejmenovává."""
+    for j, (i, _) in enumerate(st.rename_todo):
+        if (j == 0 or i in vpos) and is_piece(fr, st.recs[i]):
+            return j
+    return None
 
 
 def fast_rename(bot, mem, args, report, st):
@@ -4291,7 +4458,19 @@ def fast_rename(bot, mem, args, report, st):
             try:
                 if i not in vpos:
                     raise NotInSearch(T(f"CP{rec['cp']} ve výsledcích hledání není", f"CP{rec['cp']} isn't in the search results"))
-                old = rename_here(bot, open_in_view(bot, vseq, vpos[i], nav), new)
+                fr = bot.settle(open_in_view(bot, vseq, vpos[i], nav, loose=True))
+                j = opened_todo(fr, st, vpos)
+                if j is None:
+                    close_detail(bot, fr)
+                    raise StepError(T(f"otevřel se jiný kus než CP{rec['cp']} {rec.get('name')} "
+                                      f"(v detailu: {detail_name(fr.texts)!r}, CP{detail_cp(fr.texts)})",
+                                      f"a different Pokémon than CP{rec['cp']} {rec.get('name')} opened "
+                                      f"(the detail shows {detail_name(fr.texts)!r}, CP{detail_cp(fr.texts)})"))
+                if j:                          # stejné CP i jméno: otevřel se jiný kus k přejmenování
+                    st.rename_todo.insert(0, st.rename_todo.pop(j))
+                    i, new = st.rename_todo[0]
+                    rec = st.recs[i]
+                old = rename_here(bot, fr, new)
             except NotInSearch:
                 st.rename_todo.pop(0)
                 mark_missing(st.seq, [i], sure=True)

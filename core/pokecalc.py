@@ -3,7 +3,7 @@
 - druh a úroveň kusu z toho, co je vidět v detailu: jméno, typy, CP, HP a IV
   (i u přejmenovaných – sedět musí CP i HP zároveň)
 - CP po evoluci, max CP na úrovni 50
-- pořadí IV pro PvP ligy (1 = nejlepší ze 4096 kombinací, s nejlepší evolucí pod limit CP)
+- pořadí IV pro PvP ligy (1 = nejlepší ze 4096 kombinací, pro poslední evoluci pod limitem CP)
 - hodnoty dílků pro šablonu jména
 
 CP = (útok + IV) · √(obrana + IV) · √(výdrž + IV) · CPM² / 10, HP = (výdrž + IV) · CPM.
@@ -51,6 +51,15 @@ def base_name(name):
 NAME_INDEX = {}
 for _sid, _sp in SPECIES.items():
     NAME_INDEX.setdefault(alnum(base_name(_sp["name"])), []).append(_sid)
+    if alnum(_sp["name"]) == "mimejr":            # „Mime (Jr)“ – ve hře „Mime Jr.“, ne forma
+        NAME_INDEX.setdefault("mimejr", []).append(_sid)
+
+
+def family_key(sid):
+    """Rodina druhu pro nápovědu z cukru. Druhy bez evolucí (legendy jako Kyurem) rodinu v datech nemají
+    – jejich cukr se jmenuje jako druh."""
+    sp = SPECIES[sid]
+    return alnum(sp["family"]) or "family" + alnum(base_name(sp["name"]))
 
 
 def is_species_name(name):
@@ -88,6 +97,12 @@ def final_evolution(sid, iv=(15, 15, 15)):
     return max(leaves, key=lambda x: cp_of(SPECIES[x]["stats"], iv, _cpm_at(MAX_LEVEL)))
 
 
+def types_fit(sid, types):
+    """Sedí přečtené typy na druh? Z detailu se často přečte jen jeden ze dvou typů (Kyurem: „dragon“
+    bez „ice“), takže stačí, když druh přečtené typy má."""
+    return set(types) <= set(SPECIES[sid]["types"])
+
+
 def identify(name, types, cp, hp, iv, family_hint=None, dex_range=None):
     """Druh a úroveň kusu. Vrací (id druhu, úroveň) nebo (None, None), když to jednoznačně nejde.
     dex_range: rozmezí čísla v Pokédexu podle sousedů v boxu seřazeném podle čísla."""
@@ -95,11 +110,11 @@ def identify(name, types, cp, hp, iv, family_hint=None, dex_range=None):
         return None, None
     cands = NAME_INDEX.get(alnum(name)) or list(SPECIES)
     if types:
-        typed = [c for c in cands if sorted(SPECIES[c]["types"]) == sorted(types)]
+        typed = [c for c in cands if types_fit(c, types)]
         cands = typed or cands
     if family_hint:
         hint = alnum(family_hint)
-        fam = [c for c in cands if hint and hint in alnum(SPECIES[c]["family"])]
+        fam = [c for c in cands if hint and hint in family_key(c)]
         cands = fam or cands
     fits = []
     for c in cands:
@@ -113,9 +128,21 @@ def identify(name, types, cp, hp, iv, family_hint=None, dex_range=None):
     if not fits:
         return None, None
     kinds = {tuple(SPECIES[c]["stats"]) for c, _ in fits}
+    if len(kinds) > 1:
+        # jméno od bota („MAX 3429 L35“): rozhodne druh, jehož max CP (nebo úroveň) ve jméně je
+        nums = {int(x) for x in re.findall(r"\d+", name or "")}
+        named = [f for f in fits if max_cp(f[0], iv) in nums] or \
+                [f for f in fits if nums and f[1] == int(f[1]) and int(f[1]) in nums]
+        fits = named or fits
+        kinds = {tuple(SPECIES[c]["stats"]) for c, _ in fits}
     if len(kinds) == 1:                 # jeden druh (nebo formy se stejnými staty)
         return fits[0]
     return None, None
+
+
+def max_cp(sid, iv):
+    """Max CP poslední evoluce na úrovni 50 (dílek šablony cpMax)."""
+    return cp_of(SPECIES[final_evolution(sid, iv)]["stats"], iv, _cpm_at(MAX_LEVEL))
 
 
 def iv_fits(name, types, cp, hp, iv, family_hint=None, max_species=3):
@@ -127,9 +154,9 @@ def iv_fits(name, types, cp, hp, iv, family_hint=None, max_species=3):
     cands = list(NAME_INDEX.get(alnum(name or "")) or [])
     if not cands and family_hint:
         hint = alnum(family_hint)
-        cands = [c for c in SPECIES if hint and hint in alnum(SPECIES[c]["family"])]
+        cands = [c for c in SPECIES if hint and hint in family_key(c)]
     if types:
-        cands = [c for c in cands if sorted(SPECIES[c]["types"]) == sorted(types)] or cands
+        cands = [c for c in cands if types_fit(c, types)] or cands
     if not cands or len(cands) > max_species:
         return False
     return any(bool(((_cps(SPECIES[c]["stats"], iv) == cp) & (_hps(SPECIES[c]["stats"], iv) == hp)).any())
@@ -152,11 +179,13 @@ def _league_products(sid, cap):
 
 
 def league_rank(sid, iv, league):
-    """Pořadí IV pro ligu (1 = nejlepší) s nejlepší evolucí pod limit CP: (pořadí, druh) nebo None."""
+    """Pořadí IV pro ligu (1 = nejlepší) poslední evoluce (při větvení té nejlepší): (pořadí, druh) nebo None.
+    Nižší stupně se nepočítají – Treecko s 15/15/15 nedosáhne 1500 CP ani na úrovni 50, takže by byl
+    „první“ ve všech ligách, i když se v nich hraje za Sceptile."""
     cap = LEAGUES[league]
     k = iv[0] * 256 + iv[1] * 16 + iv[2]
     best = None
-    for form in descendants(sid):
+    for form in [x for x in descendants(sid) if not SPECIES[x]["evolutions"]] or [sid]:
         prod = _league_products(form, cap)
         if prod[k] < 0:
             continue
@@ -175,7 +204,7 @@ def info(sid, iv, level, cp_now):
     ranks = {lg: league_rank(sid, iv, lg) for lg in LEAGUES}
     return {
         "species": base_name(sp["name"]), "dex": sp["dex"], "level": level, "final": fname,
-        "cp_evo": cp_evo, "max_cp": cp_of(SPECIES[fin]["stats"], iv, _cpm_at(MAX_LEVEL)),
+        "cp_evo": cp_evo, "max_cp": max_cp(sid, iv),
         "ranks": {lg: (r[0] if r else None) for lg, r in ranks.items()},
     }
 

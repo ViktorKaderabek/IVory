@@ -276,7 +276,7 @@ flowchart LR
 <summary><b>How IV %, PvP rank and the name pieces are calculated</b></summary>
 
 - **IV %** = (attack + defense + HP) / 45, rounded. The range 85–100 % therefore starts at an IV sum of 39.
-- **PvP rank** = position of the Pokémon's IV combination among all 4,096 for the league (1 = best), at the highest level that stays under the CP cap (1,500 Great, 2,500 Ultra, none for Master), for the best evolution in its line.
+- **PvP rank** = position of the Pokémon's IV combination among all 4,096 for the league (1 = best), at the highest level that stays under the CP cap (1,500 Great, 2,500 Ultra, none for Master), for its final evolution (with branching evolutions, the best branch).
 - **Name pieces:** IV % (`91`), IV values (`14/13/14`), level (`L15`), species (`Baxcalibur`), short species (first 6 letters), final evolution (first 3 letters, `Bax`), CP after evolution, max CP at level 50, league ranks (`G12`, `U5`, `M30`), custom text, and separators (space, `-`, `|`). Names longer than 12 characters are cut.
 - **Custom nickname** = a name that is neither the species name nor a name IVory gave earlier. Such Pokémon are skipped unless you turn on *Overwrite custom nicknames too*.
 
