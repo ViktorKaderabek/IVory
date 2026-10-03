@@ -181,7 +181,14 @@ struct AppConfig: Codable, Equatable {
     var steps = Steps()
     var pvp = PvPConfig()
     var rename = RenameConfig()
-    var language = AppLanguage.en
+    var language = AppLanguage.system
+    /// Kontrolovat aktualizace při spuštění a jednou za 24 hodin (Updater.swift).
+    var checkUpdates = true
+    /// Souhlas s upozorněním na rizika (okno při prvním spuštění, viz Consent.swift): verze textu,
+    /// kdy a ve které verzi aplikace. Stejná pole zapisuje i scripts/run.sh po potvrzení v Terminálu.
+    var consentVersion = 0
+    var consentAt = ""
+    var consentAppVersion = ""
 
     /// Co bot napíše do pole Search v inventáři (kusy, mezi kterými hledá duplicity).
     static let defaultSearchQuery = "count & !legendary & !ultra beasts"
@@ -218,6 +225,10 @@ struct AppConfig: Codable, Equatable {
         case recheckTagged = "recheck_tagged"
         case maxGroups = "max_groups"
         case steps, pvp, rename, language
+        case checkUpdates = "check_updates"
+        case consentVersion = "consent_version"
+        case consentAt = "consent_at"
+        case consentAppVersion = "app_version"
     }
 
     init() {}
@@ -240,6 +251,10 @@ struct AppConfig: Codable, Equatable {
         pvp = (try? c.decodeIfPresent(PvPConfig.self, forKey: .pvp)) ?? d.pvp
         rename = (try? c.decodeIfPresent(RenameConfig.self, forKey: .rename)) ?? d.rename
         language = (try? c.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? d.language
+        checkUpdates = (try? c.decodeIfPresent(Bool.self, forKey: .checkUpdates)) ?? d.checkUpdates
+        consentVersion = (try? c.decodeIfPresent(Int.self, forKey: .consentVersion)) ?? d.consentVersion
+        consentAt = (try? c.decodeIfPresent(String.self, forKey: .consentAt)) ?? d.consentAt
+        consentAppVersion = (try? c.decodeIfPresent(String.self, forKey: .consentAppVersion)) ?? d.consentAppVersion
     }
 }
 
@@ -316,6 +331,10 @@ final class ConfigStore: ObservableObject {
         fresh.udid = config.udid
         fresh.teamId = config.teamId
         fresh.language = config.language
+        fresh.checkUpdates = config.checkUpdates
+        fresh.consentVersion = config.consentVersion
+        fresh.consentAt = config.consentAt
+        fresh.consentAppVersion = config.consentAppVersion
         config = fresh
     }
 }

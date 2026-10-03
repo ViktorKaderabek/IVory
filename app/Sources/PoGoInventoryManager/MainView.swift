@@ -16,6 +16,10 @@ struct MainView: View {
     @State private var window = WindowRef()
     @State private var fresh = false
     @State private var confettiStart: Date?
+    /// Okno se souhlasem: rozhoduje se při spuštění (odvolání v Nastavení platí až od dalšího spuštění).
+    @State private var askConsent: Bool?
+
+    private var showConsent: Bool { askConsent ?? !Consent.isGiven(store.config) }
 
 
     /// Nejmenší šířka hlavního obsahu, pod kterou se karty mačkají.
@@ -34,6 +38,18 @@ struct MainView: View {
             .background(Theme.bg)
 
             settingsPanel
+        }
+        .disabled(showConsent)
+        .blur(radius: showConsent ? 3 : 0)
+        .overlay {
+            if showConsent {
+                ConsentOverlay { withAnimation(.easeOut(duration: 0.25)) { askConsent = false } }
+                    .transition(.opacity)
+            }
+        }
+        .onAppear {
+            if askConsent == nil { askConsent = !Consent.isGiven(store.config) }
+            Updater.shared.start { [store] in store.config.checkUpdates }
         }
         .foregroundStyle(Theme.text)
         .frame(minWidth: Self.mainMinWidth + (minLocked ? settingsWidth : 0), minHeight: 660)
@@ -209,6 +225,7 @@ struct MainView: View {
             .buttonStyle(HeaderButtonStyle(active: settingsOpen))
             .help(tr("Nastavení", "Settings"))
         }
+        .disabled(showConsent)
     }
 }
 
@@ -219,11 +236,13 @@ struct MainColumn: View {
     @Binding var fresh: Bool
     @State private var copied = false
     @State private var lastBox = LastBox.load()
+    @ObservedObject private var updater = Updater.shared
 
     private var steps: Steps { store.config.steps }
 
     var body: some View {
         VStack(spacing: 18) {
+            UpdateBanner()
             HeroCard(steps: steps, fresh: $fresh)
             stepsRow
             PhasePanel(steps: steps)
@@ -233,6 +252,8 @@ struct MainColumn: View {
                 logSection.frame(maxWidth: .infinity)
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: updater.state)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: updater.bannerHidden)
         .onChange(of: runner.finishedAt) { _, _ in lastBox = LastBox.load() }
     }
 

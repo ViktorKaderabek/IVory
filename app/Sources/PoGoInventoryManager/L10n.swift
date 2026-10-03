@@ -1,11 +1,16 @@
 import Foundation
 
-/// Jazyk aplikace i výpisu bota: angličtina (výchozí), nebo čeština. Ukládá se v config.json
+/// Jazyk aplikace i výpisu bota: čeština, nebo angličtina (výchozí podle systému). Ukládá se v config.json
 /// („language“), takže ho čte i bot.
 enum AppLanguage: String, Codable, CaseIterable, Identifiable {
-    case en, cs
+    case cs, en   // pořadí v přepínači: Čeština / English
 
     var id: String { rawValue }
+
+    /// Výchozí jazyk podle systému: čeština, když je první v Nastavení systému → Jazyk a oblast.
+    static var system: AppLanguage {
+        Locale.preferredLanguages.first?.hasPrefix("cs") == true ? .cs : .en
+    }
 
     /// Název jazyka v něm samém (přepínač v nastavení).
     var title: String { self == .en ? "English" : "Čeština" }

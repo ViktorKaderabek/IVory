@@ -26,6 +26,7 @@
 <p align="center">
   <a href="https://github.com/ViktorKaderabek/IVory/releases/latest/download/IVory.dmg"><b>⬇&nbsp; Download IVory for Mac</b></a>
   &nbsp;·&nbsp; <a href="#installation">Installation</a>
+  &nbsp;·&nbsp; <a href="#risks-and-responsibility">Risks</a>
   &nbsp;·&nbsp; <a href="#what-it-does">Features</a>
   &nbsp;·&nbsp; <a href="#how-it-works">How it works</a>
   &nbsp;·&nbsp; <a href="#troubleshooting">Troubleshooting</a>
@@ -38,6 +39,23 @@
     <img alt="IVory sorting the storage into IV tags" src="docs/screenshots/running-light.webp" width="820">
   </picture>
 </p>
+
+## Risks and responsibility
+
+> [!CAUTION]
+> **Using IVory can get your Pokémon GO account banned.** Automating the game breaks the Pokémon GO Terms of Service. Niantic can suspend or permanently ban accounts that use automation.
+
+By using IVory you confirm that:
+
+- you understand your account can be suspended or permanently banned,
+- you use IVory at your own risk and you alone are responsible for your account,
+- the authors are not liable for any loss, including lost accounts, Pokémon or items.
+
+IVory never transfers Pokémon. It only adds tags and nicknames, and it cancels every confirmation dialog. Mistakes are still possible, so check the tags before you transfer anything yourself.
+
+The app asks you to confirm this on first launch.
+
+<sub>IVory is not affiliated with, endorsed or sponsored by Niantic, Inc., The Pokémon Company or Nintendo. Pokémon and Pokémon GO are trademarks of their respective owners.</sub>
 
 ## What it does
 
@@ -103,7 +121,7 @@ measured IVs are remembered for a few hours.
         <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.webp">
         <img src="docs/screenshots/settings-light.webp" alt="IVory settings with PvP leagues and renaming">
       </picture><br>
-      <sub><b>Settings.</b> PvP leagues with rank limits and tag colors, the IV range for renaming and the name template.</sub>
+      <sub><b>Settings.</b> Language and updates on top, PvP leagues with rank limits and tag colors, the IV range for renaming and the name template.</sub>
     </td>
     <td width="60%" valign="top">
       <picture>
@@ -115,7 +133,7 @@ measured IVs are remembered for a few hours.
   </tr>
 </table>
 
-Light and dark appearance follow macOS. The app is in English or Czech (Settings → Language).
+Light and dark appearance follow macOS. The app is in English or Czech: it follows your system language and you can switch it any time in Settings, even while sorting.
 
 ## Requirements
 
@@ -147,7 +165,8 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
    ```
 
    </details>
-4. Connect your iPhone and press **Start**.
+4. Read the risk notice and confirm all three points (only the first time).
+5. Connect your iPhone and press **Start**.
    The first start sets everything up by itself and shows each step in the app:
 
    | | What IVory installs | Where |
@@ -159,6 +178,17 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
 
    Downloads are pinned to exact versions and checked against SHA-256 checksums. It takes a few minutes, needs no password and is skipped on later starts.
    On the first run Xcode also builds and signs WebDriverAgent on your iPhone, which takes another minute or two.
+
+### Updates
+
+IVory checks for a new version when it starts and then once a day. When there is one, a banner shows up above the main card:
+
+1. **What's new** opens the release notes, **Download** fetches the new version in the background. You can keep working.
+2. The download is checked against the SHA-256 checksum published with the release.
+3. **Restart** swaps the app for the new one and opens it again. Your settings and measured IVs stay.
+
+IVory never updates by itself and you can't restart while it's sorting: the banner waits until the run ends.
+The × hides the banner until the next start. You can also check by hand or turn the automatic check off in **Settings → Updates**.
 
 ### Build from source
 
@@ -202,7 +232,9 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 - **IV tags**: thresholds in percent, name and color of every tag (click the dot to pick a color).
 - **PvP tags**: per league: on/off, rank limit and tag color.
 - **Renaming**: IV range (dual slider), name template (editor with pieces and preview), overwrite custom nicknames, skip `Removable`, only Pokémon with a given tag.
-- **iPhone** (device, Apple Team ID), **Language** and **Advanced**.
+- **Language and updates** (the card on top): Čeština / English, the installed version, **Check now** and **Check automatically**.
+- **iPhone** (device, Apple Team ID) and **Advanced**.
+- **About**: version, license, the risk notice, when you confirmed it and **Revoke consent** (the notice shows up again on the next start).
 
 Everything is saved automatically to `~/.pogo/config.json`.
 
@@ -216,6 +248,7 @@ bash scripts/run.sh --fresh                           # measure IVs again (ignor
 ```
 
 Or double-click `Start.command`. The script sets up the same tools as the app on its first run.
+If you haven't confirmed the risk notice in the app yet, the script shows it and asks you to type `I agree`.
 
 ## How it works
 
@@ -255,7 +288,8 @@ flowchart LR
 
 | Key | Default | Meaning |
 |---|---|---|
-| `language` | `en` | language of the app and the log: `en` or `cs` |
+| `language` | system | language of the app and the log: `en` or `cs` |
+| `check_updates` | `true` | check for a new version on start and once a day |
 | `udid` | empty | iPhone UDID; empty = the first connected device |
 | `team_id` | empty | Apple Team ID for signing WebDriverAgent; empty = taken from the “Apple Development” certificate |
 | `search_query` | `count & !legendary & !ultra beasts` | what the bot types into the storage search |
@@ -270,6 +304,7 @@ flowchart LR
 | `pvp` | 3 leagues | `{"great": {"name": "Great League", "enabled": true, "max_rank": 100, "color": "blue"}, "ultra": …, "master": …}` |
 | `rename` | 85–100 % | `min`, `max`, `template` (pieces such as `{"k": "iv"}`, `{"k": "space"}`, `{"k": "text", "v": "TOP"}`), `overwrite_custom`, `skip_removable`, `only_tag` |
 | `fast_mode` | `true` | `false` = the old slow mode that opens every Pokémon separately |
+| `consent_version`, `consent_at`, `app_version` | – | written when you confirm the risk notice (in the app or in Terminal). Revoke it in Settings → About. |
 
 ## Files
 
@@ -280,6 +315,7 @@ flowchart LR
 | `~/.pogo/last_box.json` | the storage from the last measurement (species, IVs, league ranks). The app uses it for the number of Pokémon in the rename range and for the name previews. |
 | `~/.pogo/runtime` | Node.js, Appium and Python downloaded on the first start |
 | `~/.pogo/venv` | Python environment with the bot's libraries |
+| `~/Library/Caches/IVory` | a downloaded update until it's installed |
 | `~/Desktop/pogo_runs/<date_time>/` | results of a run: `log.txt`, `result.json`, `result_iv_tagy.json`, `iv/` (crops of the IV bars) and `chyba_XX/` (screens from the moment something went wrong) |
 
 ## Project layout
@@ -296,6 +332,18 @@ tests/               phone simulators and tests (see tests/README.md, in Czech)
 docs/                images for this README
 Start.command        double-click launcher without the app
 ```
+
+## Releasing a new version
+
+1. Raise `CFBundleShortVersionString` (and `CFBundleVersion`) in `app/Info.plist`, e.g. `1.2.0`.
+2. Build the installer: `bash scripts/build_dmg.sh` → `dist/IVory.dmg`.
+3. Publish it as the latest release with the tag `v` + the same version. The file has to be named `IVory.dmg`:
+
+   ```bash
+   gh release create v1.2.0 dist/IVory.dmg --title "IVory 1.2.0" --notes-file notes.md
+   ```
+
+Apps from 1.1.0 on find the release by themselves and offer the update.
 
 ## Tests
 
@@ -340,9 +388,3 @@ Want to use IVory commercially? [Open an issue](https://github.com/ViktorKaderab
 
 Contributions are welcome. By opening a pull request you agree that your contribution is released under the same license
 and that the author may also license it under other terms.
-
-## Disclaimer
-
-Automating the game violates the Pokémon GO Terms of Service. Use IVory at your own risk.
-This project is not affiliated with or endorsed by Niantic, Nintendo, Creatures, GAME FREAK or The Pokémon Company.
-Pokémon and Pokémon GO are trademarks of their respective owners.

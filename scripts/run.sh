@@ -46,8 +46,13 @@ case "$(uname -m)" in
 esac
 
 # Jazyk hlášek podle nastavení aplikace (config.json „language“)
+# (bez nastavení podle jazyka systému, stejně jako aplikace)
 UI_LANG=en
-grep -Eq '"language"[[:space:]]*:[[:space:]]*"cs"' "$WORK/config.json" 2>/dev/null && UI_LANG=cs
+if grep -Eq '"language"[[:space:]]*:' "$WORK/config.json" 2>/dev/null; then
+  grep -Eq '"language"[[:space:]]*:[[:space:]]*"cs"' "$WORK/config.json" && UI_LANG=cs
+else
+  defaults read -g AppleLanguages 2>/dev/null | sed -n 2p | grep -q '"*cs' && UI_LANG=cs
+fi
 t() { if [ "$UI_LANG" = cs ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
 say() { printf '\n▶ %s\n' "$*"; }
 die() { printf '\n✖ %s\n' "$*"; exit 1; }
@@ -84,6 +89,71 @@ xcodebuild -version >/dev/null 2>&1 || die "$(t \
 xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || die "$(t \
   "Xcode ještě není připravený: otevři ho jednou, nech doinstalovat součásti a pak spusť IVory znovu." \
   "Xcode isn't set up yet: open it once, let it install its components, then start IVory again.")"
+
+# --- 1b) souhlas s upozorněním na rizika (sdílený s oknem v aplikaci) -----
+CONSENT_VERSION=1   # stejné číslo jako Consent.version v app/Sources/PoGoInventoryManager/Consent.swift
+CFG="$WORK/config.json"
+HAVE="$(xcrun python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("consent_version") or 0))' "$CFG" 2>/dev/null || echo 0)"
+if [ "$HAVE" -lt "$CONSENT_VERSION" ]; then
+  [ -t 0 ] || die "$(t "Nejdřív otevři aplikaci IVory a potvrď upozornění na rizika." \
+                       "Open the IVory app first and confirm the risk notice.")"
+  if [ "$UI_LANG" = cs ]; then
+    cat <<'TXT'
+
+  ⚠  Než spustíš IVory
+
+  IVory ovládá Pokémon GO za tebe. Hra to nepovoluje.
+   • Můžeš přijít o účet: Niantic ho může dočasně nebo natrvalo zablokovat.
+   • Porušuješ podmínky hry: automatizace je v podmínkách Pokémon GO zakázaná.
+   • Bot nic nepřevádí, jen taguje a přejmenovává. I tak se může splést.
+
+  Napsáním „souhlasím“ potvrzuješ, že:
+   – rozumíš, že účet může být zablokován, i natrvalo,
+   – aplikaci používáš na vlastní riziko a za svůj účet odpovídáš sám,
+   – IVory nemá nic společného s Niantic ani The Pokémon Company.
+
+TXT
+    read -r -p "  Napiš „souhlasím“ (cokoliv jiného skript ukončí): " ANSWER
+  else
+    cat <<'TXT'
+
+  ⚠  Before you start IVory
+
+  IVory plays Pokémon GO for you. The game doesn't allow that.
+   • You can lose your account: Niantic can suspend or permanently ban it.
+   • You break the game's terms: automation is forbidden by the Pokémon GO Terms of Service.
+   • The bot never transfers anything, it only tags and renames. It can still make mistakes.
+
+  By typing "I agree" you confirm that:
+   – you understand your account can be banned, even permanently,
+   – you use the app at your own risk and you alone are responsible for your account,
+   – IVory has nothing to do with Niantic or The Pokémon Company.
+
+TXT
+    read -r -p "  Type \"I agree\" (anything else quits): " ANSWER
+  fi
+  case "$ANSWER" in
+    souhlasím|Souhlasím|SOUHLASÍM|souhlasim|Souhlasim|SOUHLASIM|"I agree"|"i agree"|"I AGREE") ;;
+    *) die "$(t "Bez souhlasu IVory nespustím." "IVory won't start without your consent.")" ;;
+  esac
+  PLIST="$HERE/../../Info.plist"; [ -f "$PLIST" ] || PLIST="$HERE/../app/Info.plist"
+  APP_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST" 2>/dev/null || echo dev)"
+  xcrun python3 - "$CFG" "$CONSENT_VERSION" "$APP_VERSION" <<'PY' || die "$(t "Souhlas se nepodařilo uložit." "Couldn't save the consent.")"
+import json, sys, datetime, os
+path, version, app = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+try:
+    cfg = json.load(open(path))
+except (OSError, ValueError):
+    cfg = {}
+cfg.update(consent_version=version, app_version=app,
+           consent_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".tmp", "w") as f:
+    json.dump(cfg, f, indent=2, sort_keys=True, ensure_ascii=False)
+os.replace(path + ".tmp", path)
+PY
+  say "$(t "Souhlas uložen." "Consent saved.")"
+fi
 
 # --- 2) Node.js a Appium -------------------------------------------------
 [ -x "$RT/node/bin/node" ] && export PATH="$RT/node/bin:$PATH"

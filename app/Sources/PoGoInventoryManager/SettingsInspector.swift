@@ -35,7 +35,7 @@ struct SettingsContent: View {
             Text(tr("Nastavení", "Settings"))
                 .font(.system(size: 22, weight: .medium))
                 .tracking(-0.3)
-            languageRow
+            LanguageUpdateCard()
             if runner.isRunning {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.system(size: 14))
@@ -63,6 +63,7 @@ struct SettingsContent: View {
             }
             .disabled(runner.isRunning)
             .opacity(runner.isRunning ? 0.5 : 1)
+            section("about", tr("O aplikaci", "About"), "info.circle", Consent.appVersion) { AboutContent() }
         }
         .padding(EdgeInsets(top: 20, leading: 20, bottom: 16, trailing: 20))
         .animation(.snappy, value: runner.isRunning)
@@ -75,23 +76,6 @@ struct SettingsContent: View {
         }
         #endif
         .onChange(of: runner.finishedAt) { _, _ in lastBox = LastBox.load() }
-    }
-
-    // MARK: - Jazyk
-
-    /// Jazyk aplikace i výpisu bota (bot ho čte z config.json při spuštění).
-    private var languageRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "globe").font(.system(size: 14)).foregroundStyle(Theme.muted)
-            Text(tr("Jazyk", "Language")).font(.system(size: 14))
-            Spacer()
-            Picker("", selection: $store.config.language) {
-                ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-        }
     }
 
     // MARK: - Sbalitelné sekce

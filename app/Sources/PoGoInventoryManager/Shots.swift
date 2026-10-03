@@ -17,6 +17,9 @@ enum ShotSession {
     static var demoConfig: AppConfig {
         var c = AppConfig()
         c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: false)
+        c.language = ProcessInfo.processInfo.environment["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
+        // snímky bez okna se souhlasem; IVORY_SHOTS_CONSENT=1 nafotí okno se souhlasem
+        c.consentVersion = ProcessInfo.processInfo.environment["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
         return c
     }
 
@@ -38,7 +41,7 @@ enum ShotSession {
         }
         let defaults = UserDefaults.standard
         let savedSections = defaults.string(forKey: "settingsOpenSections")
-        defaults.set("pvp,rename", forKey: "settingsOpenSections")
+        defaults.set(ProcessInfo.processInfo.environment["IVORY_SHOTS_SECTIONS"] ?? "pvp,rename", forKey: "settingsOpenSections")
         allowTallWindow(win)
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
