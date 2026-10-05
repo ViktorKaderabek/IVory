@@ -29,9 +29,10 @@ back to the defaults in core/ivory/config.py.
   python pogo_bot.py --no-iv          # duplicates only
   python pogo_bot.py --only-iv        # only the whole storage into IV tags
   python pogo_bot.py --fresh          # don't use IVs from memory, measure again
-  python pogo_bot.py --steps duplicates,iv,pvp,rename   # chosen steps (what the app uses)
+  python pogo_bot.py --steps duplicates,iv,pvp,rename,battle,weak   # chosen steps (what the app uses)
 
-PvP league tags and renaming run only when chosen with --steps.
+PvP league tags, renaming, Battle tags (the Pokémon the app picked in config.json) and the weak-Pokémon sweep
+run only when chosen with --steps.
 
 Normally started through scripts/run.sh (sets up Appium and Python) or from the app.
 With POGO_EVENTS=1 it also sends the app machine-readable events ("@@{json}" lines);

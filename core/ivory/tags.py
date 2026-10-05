@@ -340,7 +340,9 @@ def collect_tag_names(bot, fr):
 def wanted_tags(args):
     """The tags from the settings that this run needs."""
     names = ([cfg.TAG_NAME] if "duplicates" in args.steps else []) + \
-        ([n for _, n in cfg.IV_TAGS] if "iv" in args.steps else []) + (cfg.league_tags() if "pvp" in args.steps else [])
+        ([n for _, n in cfg.IV_TAGS] if "iv" in args.steps else []) + (cfg.league_tags() if "pvp" in args.steps else []) + \
+        (cfg.battle_tags() if "battle" in args.steps else []) + \
+        ([cfg.TAG_NAME] if "weak" in args.steps else [])
     out = []
     for n in names:
         if all(alnum(n) != alnum(o) for o in out):
@@ -395,11 +397,12 @@ def iv_tag(iv):
 
 
 def detail_tags(tx):
-    """All known tags (IV, TAG_NAME, PvP leagues, the tag renaming is limited to) that the Pokémon has
-    on its detail screen."""
+    """All known tags (IV, TAG_NAME, PvP leagues, Battle tags, the tag renaming is limited to) that the Pokémon
+    has on its detail screen."""
     region = (0.0, 0.44, 1.0, 0.68)
-    known = [n for _, n in cfg.IV_TAGS] + [cfg.TAG_NAME] + [lg["name"] for lg in cfg.PVP.values()] + \
-        ([cfg.RENAME["only_tag"]] if cfg.RENAME["only_tag"] else [])
+    known = [n for _, n in cfg.IV_TAGS] + [cfg.TAG_NAME] + [lg["name"] for lg in cfg.PVP.values()] + cfg.battle_tags() + \
+        ([cfg.RENAME["only_tag"]] if cfg.RENAME["only_tag"] else []) + \
+        ([cfg.WEAK["keep_tag"]] if cfg.WEAK["keep_tag"] else [])
     return [n for n in dict.fromkeys(known) if any(in_region(t, region) and same_tag(t["text"], n) for t in tx)]
 
 

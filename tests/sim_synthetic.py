@@ -690,7 +690,7 @@ def make_mons(seed, big=0):
     return mons
 
 
-DEFAULT_IV_TAGS, DEFAULT_TEMPLATE = list(S.IV_TAGS), list(S.RENAME["template"] or [])
+DEFAULT_IV_TAGS, DEFAULT_TEMPLATE, DEFAULT_WEAK = list(S.IV_TAGS), list(S.RENAME["template"] or []), dict(S.WEAK)
 
 
 class Args:
@@ -704,6 +704,8 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
     merge = variant.pop("merge_names", False) # OCR merges long names of neighboring cells (like the iPhone)
     max_reads = variant.pop("max_reads", None)    # the second run may read at most this many Pokémon (appraisal + ▶)
     refuse_first = variant.pop("refuse_first", False)   # the game refuses the name of the first Pokémon to rename
+    battle = variant.pop("battle", None)      # Battle tags: [(name, color, picked indexes, indexes that already have it)]
+    weak = variant.pop("weak", None)          # weak Pokémon: the max_iv %, or a dict of settings
     old_min = S.RENAME["min"]
     S.RENAME["min"] = variant.pop("rename_min", old_min)
     if variant.get("template"):
@@ -718,6 +720,15 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
                 ("70-0% Garbage", "black")]                         # the other tags are missing in the game
     if mixed:
         existing.append(("Master League", "purple"))
+    for n, c, _, had in battle or []:
+        if had:                                  # a tag already in the game, on Pokémon the app no longer picks
+            existing.append((n, c))
+            for i in had:
+                mons[i]["tags"].add(n); init[i].add(n)
+    S.BATTLE = {"tags": [{"name": n, "color": c, "mons": [{"cp": mons[i]["cp"], "iv": tuple(mons[i]["iv"])} for i in idx]}
+                         for n, c, idx, _ in battle or []]}
+    if weak is not None:
+        S.WEAK = dict(DEFAULT_WEAK, **(weak if isinstance(weak, dict) else {"max_iv": weak}))
     phone = Phone(mons, seed, existing_tags=existing, **variant)
     refused = None
     if refuse_first:
@@ -799,15 +810,39 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         if len(idx) < 2: continue
         best = max(idx, key=lambda i: (sum(mons[i]["iv"]), *mons[i]["iv"]))
         exp_rem |= {i for i in idx if i != best}
+    lgnames = {lg["name"] for lg in S.PVP.values()}
+    btnames = {n for n, _, _, _ in battle or []}
+    # who the weak step should tag: under the IV limit and not protected
+    want_weak = set()
+    if "weak" in st_used:
+        best = {}
+        for m in mons:
+            best[m["sp"]] = max(best.get(m["sp"], -1), sum(m["iv"]))
+        for i, m in enumerate(mons):
+            if i in ghost or round(sum(m["iv"]) * 100 / 45) >= S.WEAK["max_iv"]:
+                continue
+            sp_tags = set((PC.SPECIES.get(m["sp"].lower()) or {}).get("tags") or [])
+            if S.WEAK["keep_legendary"] and "legendary" in sp_tags: continue
+            if S.WEAK["keep_mythical"] and "mythical" in sp_tags: continue
+            if S.WEAK["keep_ultra_beast"] and "ultrabeast" in sp_tags: continue
+            if S.WEAK["keep_regional"] and sp_tags & {"regional", "alolan", "galarian", "hisuian", "paldean"}: continue
+            if S.WEAK["keep_battle"] and m["tags"] & (lgnames | btnames): continue
+            if S.WEAK["keep_tag"] and S.WEAK["keep_tag"] in m["tags"]: continue
+            if S.WEAK["keep_best"] and best[m["sp"]] == sum(m["iv"]): continue
+            want_weak.add(i)
+    exp_rem |= want_weak                     # the weak step adds the same tag and never takes it off
     bad_rem = sorted(i for i, m in enumerate(mons) if (S.TAG_NAME in m["tags"]) != (i in exp_rem) and i not in ghost)
     bad_iv = [(i, m["sp"], m["iv"], sorted(m["tags"])) for i, m in enumerate(mons)
               if "iv" in st_used and i not in exp_rem and i not in ghost and m["tags"] & ivnames != {S.iv_tag(m["iv"])}]
-    lgnames = {lg["name"] for lg in S.PVP.values()}
-    bad_pvp, bad_name = [], []
+    bad_pvp, bad_name, bad_battle = [], [], []
     for i, m in enumerate(mons):
         if i in exp_rem or i in ghost:
             continue
         sid = m["sp"].lower()
+        if "battle" in st_used:
+            want = {n for n, _, idx, _ in battle or [] if i in idx}
+            if m["tags"] & btnames != want:
+                bad_battle.append((i, m["sp"], sorted(m["tags"] & btnames), sorted(want)))
         if "pvp" in st_used:
             want = {S.PVP[lg]["name"] for lg in S.PVP if (PC.league_rank(sid, m["iv"], lg) or (9999,))[0] <= S.PVP[lg]["max_rank"]}
             if m["tags"] & lgnames != want:
@@ -823,7 +858,7 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
                 want = m["sp"]                   # the game refused the name: the Pokémon keeps its own
             if m["name"] != want:
                 bad_name.append((i, m["sp"], m["iv"], m["name"], want))
-    other_lost = [i for i, m in enumerate(mons) if (init[i] - ivnames - lgnames - {S.TAG_NAME}) - m["tags"]]
+    other_lost = [i for i, m in enumerate(mons) if (init[i] - ivnames - lgnames - btnames - {S.TAG_NAME}) - m["tags"]]
     # a picture for the app for every Pokémon in the memory, and none for others (the saving runs in the background)
     want_cards = {S.card_key(it["cp"], it["iv"]) for it in S.Memory(S.MEMORY_FILE).box_items() if it.get("cp")}
     cdir, cards = S.cards_dir(S.MEMORY_FILE), set()
@@ -835,18 +870,20 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
         time.sleep(0.1)
     bad_cards = sorted(cards ^ want_cards)
     wanted = ([S.TAG_NAME] if "duplicates" in st_used else []) + \
-        ([n for _, n in S.IV_TAGS] if "iv" in st_used else []) + (sorted(lgnames) if "pvp" in st_used else [])
+        ([n for _, n in S.IV_TAGS] if "iv" in st_used else []) + (sorted(lgnames) if "pvp" in st_used else []) + \
+        (sorted(btnames) if "battle" in st_used else [])
     missing = [n for n in wanted if n not in phone.tags]
     wrong_color = [(n, c, S.tag_color(n)) for n, c in phone.created if c != S.tag_color(n)]
     ok = not err and not bad_rem and not bad_iv and not other_lost and not missing and not wrong_color \
-        and not bad_pvp and not bad_name and not phone.bad and not bad_cards \
+        and not bad_pvp and not bad_name and not bad_battle and not phone.bad and not bad_cards \
         and ("duplicates" not in st_used or phone.queries) and all(query_ok(q) for q in phone.queries) \
         and (not variant.get("ghost") or ghost) and not phone.done_stuck \
         and (not rerun or (second is not None and second[1] <= 3)) \
         and (max_reads is None or (second is not None and second[1] + second[2] <= max_reads)) \
         and (not refused or (phone.refusals == [refused] and S.Memory(S.MEMORY_FILE).refused_name(refused)))
     print(f"{'OK ' if ok else 'FAIL'} {name:28s} error={err} | Removable wrong={bad_rem} | IV wrong={bad_iv} | "
-          f"PvP wrong={bad_pvp} | names wrong={bad_name} | renamed={phone.renamed} | "
+          f"PvP wrong={bad_pvp} | names wrong={bad_name} | {f'Battle wrong={bad_battle} | ' if battle else ''}"
+          f"renamed={phone.renamed} | "
           f"{f'refused={phone.refusals} | ' if refused else ''}"
           f"cards={len(cards)}{f' wrong={bad_cards[:4]}' if bad_cards else ''} | "
           f"other tags lost={other_lost} | missing tags={missing} | wrong color={wrong_color} | "
@@ -855,6 +892,8 @@ def run(name, seed=3, verbose=False, only_iv=False, fast=True, steps=None, injec
           (f" | run 1 {first[0]:.0f}s, appraisal {first[1]}×, ▶ {first[2]}× | run 2 {second[0]:.0f}s, "
            f"appraisal {second[1]}×, ▶ {second[2]}×" if first and second else ""), flush=True)
     S.IV_TAGS, S.RENAME["template"] = list(DEFAULT_IV_TAGS), list(DEFAULT_TEMPLATE)   # later scenarios start from the defaults
+    S.BATTLE = {"tags": []}
+    S.WEAK = dict(DEFAULT_WEAK)
     S.RENAME["min"] = old_min
     return ok
 
@@ -895,6 +934,18 @@ SCENARIOS = {
                                    {"k": "space"}, {"k": "lvl"}]),
     "mixed_tags": dict(big=1, mixed=True, steps=["pvp"]),
     # two Kyogre with the same CP that the search shows in reverse order; each name must go to the right one
+    # Battle tags from the app's picks: "Raid" already in the game on two Pokémon that are no longer picked (it must
+    # come off them), "GL tým" missing (created in its color)
+    "battle_tags": dict(big=1, steps=["battle"], battle=[("Raid", "red", [9, 1, 4], [5, 12]), ("GL tým", "green", [7, 3], [])]),
+    "battle_all_steps": dict(big=1, steps=["duplicates", "iv", "pvp", "rename", "battle"],
+                             battle=[("Raid", "red", [9, 1, 4], [5]), ("GL tým", "green", [7], [])]),
+    # weak Pokémon: everyone under the IV limit gets the transfer tag, but the protections keep the rare ones
+    "weak_pokemon": dict(big=1, steps=["weak"], weak=80),
+    "weak_with_duplicates": dict(big=1, steps=["duplicates", "iv", "weak"], weak=75),
+    # every protection off: even legendaries under the limit get tagged
+    "weak_no_keeps": dict(big=1, steps=["weak"],
+                          weak=dict(max_iv=80, keep_legendary=False, keep_mythical=False, keep_ultra_beast=False,
+                                    keep_regional=False, keep_best=False, keep_battle=False)),
     "twins_same_cp": dict(big=1, twins_rev=True, steps=["iv", "rename"],
                           template=[{"k": "text", "v": "MAX"}, {"k": "space"}, {"k": "cpMax"},
                                     {"k": "space"}, {"k": "lvl"}]),

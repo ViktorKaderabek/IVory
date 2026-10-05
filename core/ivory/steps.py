@@ -1,4 +1,4 @@
-"""The four steps of a run: duplicates, IV tags, PvP tags and renaming."""
+"""The five steps of a run: duplicates, IV tags, PvP tags, renaming and Battle tags."""
 import time
 
 import pokecalc
@@ -253,6 +253,118 @@ def fast_pvp(bot, mem, args, report, st):
 
     def done(tag, remove, idxs):
         report.pvp_tagged += 0 if remove else len(idxs)
+        emit("tagged", tag=tag, color=cfg.tag_color(tag), remove=remove,
+             items=[{"cp": st.seq[i]["cp"], "name": st.seq[i]["name"]} for i in idxs])
+    run_passes(bot, st, done)
+
+
+def fast_battle(bot, mem, args, report, st):
+    """Part 5: Battle tags in bulk. The app picks the Pokémon (the best raid attackers of each type, the chosen
+    PvP teams) and writes them into config.json by CP and IVs; a picked Pokémon gets the tag, anyone else who has
+    it loses it. Pokémon tagged for transfer are left alone."""
+    ensure_scanned(bot, st, mem)
+    if not st.battle_planned:
+        identify_all(st)                        # the species, so a pick survives a power-up (CP changes, IVs don't)
+        groups = cfg.BATTLE["tags"]
+        add = {g["name"]: [] for g in groups}
+        drop = {g["name"]: [] for g in groups}
+        found = {g["name"]: set() for g in groups}
+        for i in sorted(st.recs):
+            rec = st.recs[i]
+            if not rec.get("iv"):
+                continue
+            iv, sid = tuple(rec["iv"]), rec.get("sid")
+            tags = set(rec.get("tags") or [])
+            for g in groups:
+                # the same species with the same IVs is the same Pokémon even after a power-up; without a known
+                # species fall back to the CP the app saw
+                picked = next((m for m in g["mons"] if m["iv"] == iv
+                               and (m["sid"] == sid if m.get("sid") and sid else m["cp"] == rec.get("cp"))), None)
+                if picked:
+                    found[g["name"]].add(id(picked))
+                if picked and g["name"] not in tags:
+                    add[g["name"]].append(i)
+                elif not picked and g["name"] in tags:
+                    drop[g["name"]].append(i)
+        for g in groups:
+            gone = len([m for m in g["mons"] if id(m) not in found[g["name"]]])
+            if gone:
+                log(T(f"   {g['name']}: {pokemon_count(gone)} z výběru v úložišti už není (přenesení, vylepšení?)",
+                      f"   {g['name']}: {pokemon_count(gone)} of the picks aren't in the storage any more (transferred, powered up?)"))
+        st.passes = [(n, False, ix) for n, ix in add.items() if ix] + [(n, True, ix) for n, ix in drop.items() if ix]
+        st.battle_planned = True
+        if st.passes:
+            log(T("\n   Plán Battle tagů: ", "\n   Battle tag plan: ") + ", ".join(f"{'−' if rm else '+'}{n} ({len(ix)})" for n, rm, ix in st.passes))
+        else:
+            log(T("   Battle tagy už sedí, není co měnit.", "   The Battle tags already fit, nothing to change."))
+
+    def done(tag, remove, idxs):
+        report.battle_tagged += 0 if remove else len(idxs)
+        emit("tagged", tag=tag, color=cfg.tag_color(tag), remove=remove,
+             items=[{"cp": st.seq[i]["cp"], "name": st.seq[i]["name"]} for i in idxs])
+    run_passes(bot, st, done)
+
+
+def fast_weak(bot, mem, args, report, st):
+    """Part 6: everyone under WEAK["max_iv"] % gets the tag for transferring. It runs last, so the PvP and Battle
+    tags set earlier in this run already protect their Pokémon. The tag is only added, never taken off: the
+    duplicates step and the user put it on for their own reasons."""
+    ensure_scanned(bot, st, mem)
+    if not st.weak_planned:
+        identify_all(st)
+        limit = cfg.WEAK["max_iv"]
+        protected = set(cfg.PVP[lg]["name"] for lg in cfg.PVP) | set(cfg.battle_tags())
+        keep_tag = cfg.WEAK["keep_tag"]
+        best = {}                                   # species -> the best IV sum in the storage
+        if cfg.WEAK["keep_best"]:
+            for rec in st.recs.values():
+                sid = (rec.get("sid") or "").split("_")[0]
+                if sid and rec.get("iv"):
+                    best[sid] = max(best.get(sid, -1), sum(rec["iv"]))
+        add, kept = [], {}
+
+        def skip(why):
+            kept[why] = kept.get(why, 0) + 1
+
+        for i in sorted(st.recs):
+            rec = st.recs[i]
+            if not rec.get("iv"):
+                continue
+            pct = round(sum(rec["iv"]) * 100 / 45)
+            if pct >= limit:
+                continue
+            tags = set(rec.get("tags") or [])
+            if cfg.TAG_NAME in tags:
+                continue                            # already tagged (duplicates, or by hand)
+            sid = rec.get("sid")
+            sp_tags = set(pokecalc.SPECIES[sid]["tags"]) if sid in pokecalc.SPECIES else set()
+            if cfg.WEAK["keep_legendary"] and "legendary" in sp_tags:
+                skip(T("legendární", "legendary"))
+            elif cfg.WEAK["keep_mythical"] and "mythical" in sp_tags:
+                skip(T("mýtičtí", "mythical"))
+            elif cfg.WEAK["keep_ultra_beast"] and "ultrabeast" in sp_tags:
+                skip(T("ultra beasts", "ultra beasts"))
+            elif cfg.WEAK["keep_regional"] and sp_tags & {"regional", "alolan", "galarian", "hisuian", "paldean"}:
+                skip(T("regionální formy", "regional forms"))
+            elif cfg.WEAK["keep_battle"] and tags & protected:
+                skip(T("PvP a Battle tagy", "PvP and Battle tags"))
+            elif keep_tag and keep_tag in tags:
+                skip(keep_tag)
+            elif cfg.WEAK["keep_best"] and sid and best.get((sid or "").split("_")[0]) == sum(rec["iv"]):
+                skip(T("nejlepší svého druhu", "the best of its species"))
+            else:
+                add.append(i)
+                log(f"   CP{rec['cp']:<5} {pct:>3} %  {rec['name']}  -> {cfg.TAG_NAME}")
+        st.passes = [(cfg.TAG_NAME, False, add)] if add else []
+        st.weak_planned = True
+        if kept:
+            log(T("   Chráněné (netagují se): ", "   Protected (left alone): ")
+                + ", ".join(f"{n} {v}×" for n, v in sorted(kept.items())))
+        log(T(f"\n   Pod {limit} % IV: {pokemon_count(len(add))} dostane tag {cfg.TAG_NAME}.",
+              f"\n   Under {limit}% IV: {pokemon_count(len(add))} will get the {cfg.TAG_NAME} tag."))
+
+    def done(tag, remove, idxs):
+        report.weak_tagged += len(idxs)
         emit("tagged", tag=tag, color=cfg.tag_color(tag), remove=remove,
              items=[{"cp": st.seq[i]["cp"], "name": st.seq[i]["name"]} for i in idxs])
     run_passes(bot, st, done)

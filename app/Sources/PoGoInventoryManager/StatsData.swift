@@ -22,7 +22,7 @@ final class StatsStore: ObservableObject {
 
 /// Stats for the "What IVory knows" screen. Computed only here on the Mac from what the bot saved:
 /// the memory (~/.pogo/pamet.json), the storage as of the last read (~/.pogo/last_box.json), species
-/// data (core/pokedata.json in the app) and the run folders (~/Desktop/pogo_runs). Nothing is downloaded.
+/// data (~/.pogo/pokedata.json, downloaded by the bot) and the run folders (~/Desktop/pogo_runs).
 struct InventoryStats {
     struct Named: Identifiable {
         let name: String
@@ -49,6 +49,7 @@ struct InventoryStats {
         let readAt: Date?         // when the bot first read it
         let ranks: [String: Int]  // great / ultra / master → rank among the 4,096 IV combinations (1 = best)
         let maxCP50: Int?         // this species at level 50 with these IVs
+        let sid: String?          // PvPoke species id ("medicham"), the key into pokedata.json
         /// First read by the last run (false for everyone when the last run read the whole memory afresh).
         var isNew = false
 
@@ -132,7 +133,7 @@ struct InventoryStats {
         s.runs = RunHistory.merge(loadRuns(RunResults.root))
 
         guard let mem = decode(Memory.self, home.appendingPathComponent(".pogo/pamet.json")) else { return s }
-        let data = loadSpecies()
+        let data = decode(PokeData.self, home.appendingPathComponent(".pogo/pokedata.json"))
         let species = data?.species ?? [:]
         let cpm50 = (data?.cpm.count ?? 0) >= 50 ? data?.cpm[49] : nil
         let values = rankValues(decode(LastBoxFile.self, home.appendingPathComponent(".pogo/last_box.json")))
@@ -155,7 +156,8 @@ struct InventoryStats {
                        iv: item.iv, cp: item.cp ?? 0, level: item.level, tags: item.tags ?? [],
                        legendary: tags.contains("legendary"), ultraBeast: tags.contains("ultrabeast"),
                        mythical: tags.contains("mythical"), canEvolve: !(sp?.evolutions ?? []).isEmpty,
-                       readAt: item.t.map { Date(timeIntervalSince1970: $0) }, ranks: ranks, maxCP50: maxCP)
+                       readAt: item.t.map { Date(timeIntervalSince1970: $0) }, ranks: ranks, maxCP50: maxCP,
+                       sid: sp == nil ? nil : item.sid)
         }
         guard !s.mons.isEmpty else { return s }
         if s.runs.isEmpty { s.runs = RunHistory.merge(RunHistory.estimate(s.mons.compactMap(\.readAt))) }
@@ -247,21 +249,6 @@ struct InventoryStats {
     private static func decode<T: Decodable>(_ type: T.Type, _ url: URL) -> T? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
-    }
-
-    /// core/pokedata.json: in Resources/core inside the app, next to the sources during development.
-    private static func loadSpecies() -> PokeData? {
-        if let url = Bundle.main.url(forResource: "pokedata", withExtension: "json", subdirectory: "core"),
-           let data = decode(PokeData.self, url) {
-            return data
-        }
-        #if DEBUG
-        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../core/pokedata.json").standardizedFileURL
-        return decode(PokeData.self, repo)
-        #else
-        return nil
-        #endif
     }
 
     /// The PvP ranks from last_box.json, matched to the memory by CP and IVs (and the name when two match).

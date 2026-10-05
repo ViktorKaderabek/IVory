@@ -39,6 +39,8 @@ class FastState:
         self.iv_planned = False
         self.pvp_planned = False
         self.rename_planned = False
+        self.battle_planned = False
+        self.weak_planned = False
         self.identified = False
         self.passes = []         # [(tag, remove?, indexes)]: bulk taggings still to do
         self.pass_fails = 0      # failed attempts at the current batch
@@ -59,7 +61,7 @@ def emit_counts(bot, changed=None, delta=0):
 
 def count_tags(bot, st):
     """After reading the whole storage: the number of Pokémon in each known tag, as it is in the game now."""
-    known = [cfg.TAG_NAME] + [n for _, n in cfg.IV_TAGS] + [lg["name"] for lg in cfg.PVP.values()]
+    known = [cfg.TAG_NAME] + [n for _, n in cfg.IV_TAGS] + [lg["name"] for lg in cfg.PVP.values()] + cfg.battle_tags()
     bot.tag_counts = {n: 0 for n in known}
     for rec in st.recs.values():
         for n in rec.get("tags") or []:

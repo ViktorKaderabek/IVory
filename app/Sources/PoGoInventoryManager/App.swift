@@ -14,6 +14,10 @@ enum Entry {
             let code = MainActor.assumeIsolated { SnapshotExport.run(to: args[i + 1]) }
             exit(code)
         }
+        if args.contains("--battle-dump") {
+            MainActor.assumeIsolated { BattleStore.shared.dump() }
+            exit(0)
+        }
         #endif
         IVoryApp.main()
     }

@@ -1,4 +1,4 @@
-"""Calculations on species stats (core/pokedata.json, built by scripts/build_pokedata.py).
+"""Calculations on species stats (~/.pogo/pokedata.json, downloaded by core/pokedata.py).
 
 - species and level of a Pokémon from what the detail screen shows: name, types, CP, HP and IV
   (renamed ones too – CP and HP must both fit)
@@ -8,15 +8,15 @@
 
 CP = (attack + IV) · √(defense + IV) · √(stamina + IV) · CPM² / 10, HP = (stamina + IV) · CPM.
 """
-import json
 import re
 import unicodedata
 from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 
-DATA = json.loads(Path(__file__).with_name("pokedata.json").read_text())
+import pokedata
+
+DATA = pokedata.load()
 SPECIES = DATA["species"]
 _CPM = DATA["cpm"]                       # whole levels 1, 2, 3 …
 MAX_LEVEL = 50.0                         # cap for the PvP rank and max CP

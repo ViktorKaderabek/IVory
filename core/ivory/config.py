@@ -54,8 +54,8 @@ TAG_COLOR = "red"              # color of the TAG_NAME tag when the bot creates 
 DEFAULT_IV_COLORS = ["yellow", "orange", "purple", "blue", "green", "gray", "black"]   # best first
 TAG_COLORS = {name: DEFAULT_IV_COLORS[i % len(DEFAULT_IV_COLORS)] for i, (_, name) in enumerate(IV_TAGS)}
 
-# Steps of a run (always in this order): duplicates, IV tags, PvP tags, renaming
-STEPS = ["duplicates", "iv", "pvp", "rename"]
+# Steps of a run (always in this order): duplicates, IV tags, PvP tags, renaming, Battle tags, weak Pokémon
+STEPS = ["duplicates", "iv", "pvp", "rename", "battle", "weak"]
 
 # PvP tags: a Pokémon whose IV rank for a league is within max_rank gets that league's tag (1 = best of 4096)
 PVP = {
@@ -63,6 +63,16 @@ PVP = {
     "ultra": {"name": "Ultra League", "enabled": True, "max_rank": 100, "color": "yellow"},
     "master": {"name": "Master League", "enabled": True, "max_rank": 50, "color": "purple"},
 }
+
+# Battle tags: the app picks the Pokémon (the best raid attackers of each type, the chosen PvP teams) and writes
+# them into config.json; a picked Pokémon gets the tag, anyone else who has it loses it
+BATTLE = {"tags": []}          # [{"name": "Raid", "color": "red", "mons": [{"cp": 2400, "iv": (15, 14, 13)}]}]
+
+# Weak Pokémon: everyone under max_iv % gets the TAG_NAME tag (the one for transferring). It runs last, so it
+# sees the tags the other steps set. The keep_* switches protect the rarer ones; the bot can't tell shadow, lucky
+# or Dynamax apart, so for those there is keep_tag: a tag the user puts on them in the game.
+WEAK = {"max_iv": 70, "keep_legendary": True, "keep_mythical": True, "keep_ultra_beast": True,
+        "keep_regional": True, "keep_best": True, "keep_battle": True, "keep_tag": ""}
 
 # Renaming: Pokémon with IVs in the range get a name built from the template (max. 12 characters)
 RENAME = {"min": 85, "max": 100, "template": None, "overwrite_custom": False, "skip_removable": True,
@@ -163,9 +173,17 @@ def tag_color(name):
     for lg in PVP.values():
         if lg["name"] == name:
             return lg["color"]
+    for t in BATTLE["tags"]:
+        if t["name"] == name:
+            return t["color"]
     return TAG_COLORS.get(name)
 
 
 def league_tags():
     """Tag names of the enabled PvP leagues."""
     return [lg["name"] for lg in PVP.values() if lg["enabled"]]
+
+
+def battle_tags():
+    """Tag names of the Battle tags."""
+    return [t["name"] for t in BATTLE["tags"]]

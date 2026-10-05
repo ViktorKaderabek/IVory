@@ -149,7 +149,8 @@ struct TagBarRow: View {
     }
 }
 
-/// The "Tags in your storage" panel: Removable, IV tags and PvP leagues. Fills in during a run and stays after it ends.
+/// The "Tags in your storage" panel: Removable, IV tags, PvP leagues and Battle tags. Fills in during a run and stays
+/// after it ends.
 struct TagsPanel: View {
     @EnvironmentObject private var store: ConfigStore
     @EnvironmentObject private var runner: Runner
@@ -170,6 +171,14 @@ struct TagsPanel: View {
                 ForEach(ivTags) { t in row(t.name, t.color) }
                 divider
                 ForEach(c.pvp.all, id: \.key) { item in row(item.league.name, item.league.color) }
+                if c.steps.battle || c.steps.weak {
+                    divider
+                    if c.steps.battle, c.battle.raid.enabled { row(c.battle.raid.name, c.battle.raid.color) }
+                    if c.steps.battle {
+                        ForEach(c.battle.teams.filter(\.tag.enabled), id: \.league) { item in row(item.tag.name, item.tag.color) }
+                    }
+                    if c.steps.weak, !c.weak.keepTag.isEmpty { row(c.weak.keepTag, .gray) }
+                }
             }
             .padding(EdgeInsets(top: 12, leading: 14, bottom: 12, trailing: 14))
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

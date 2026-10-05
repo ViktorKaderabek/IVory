@@ -17,7 +17,7 @@ enum ShotSession {
     /// Default settings (no UDID or Team ID), PvP tags on, renaming off.
     static var demoConfig: AppConfig {
         var c = AppConfig()
-        c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: false)
+        c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: false, battle: false, weak: false)
         c.language = ProcessInfo.processInfo.environment["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
         // shots without the consent window; IVORY_SHOTS_CONSENT=1 captures the consent window
         c.consentVersion = ProcessInfo.processInfo.environment["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
@@ -61,7 +61,7 @@ enum ShotSession {
             print("okno \(win.frame) obrazovka \(win.screen?.visibleFrame ?? .zero) aktivní \(NSApp.isActive) klíčové \(win.isKeyWindow)")
             shot([win], folder, "ready-\(name)")
 
-            store.config.steps = Steps(duplicates: true, iv: true, pvp: true, rename: true)
+            store.config.steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
             runner.applyPreview("running")
             await pause(1.6)
             shot([win], folder, "running-\(name)")

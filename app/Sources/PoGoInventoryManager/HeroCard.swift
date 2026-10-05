@@ -168,6 +168,8 @@ struct HeroCard: View {
         }
         if steps.pvp { parts.append(tr("otaguji kusy pro PvP ligy", "tag Pokémon for PvP leagues")) }
         if steps.rename { parts.append(tr("přejmenuji kusy s IV \(range)", "rename Pokémon with IV \(range)")) }
+        if steps.battle { parts.append(tr("otaguji raid útočníky a PvP týmy", "tag raid attackers and PvP teams")) }
+        if steps.weak { parts.append(tr("označím kusy pod \(c.weak.maxIV) % IV", "tag Pokémon under \(c.weak.maxIV)% IV")) }
         guard !parts.isEmpty else { return tr("Vyber, co se má udělat.", "Choose what to do.") }
         let text = parts.count == 1 ? parts[0] : parts.dropLast().joined(separator: ", ") + tr(" a ", " and ") + parts.last!
         return text.prefix(1).uppercased() + text.dropFirst() + "."
@@ -321,7 +323,7 @@ struct StartButton: View {
             if runner.isRunning {
                 runner.stop()
             } else {
-                store.save()
+                store.prepareRun()
                 runner.start(steps: steps, fresh: fresh)
             }
         } label: {

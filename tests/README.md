@@ -28,7 +28,7 @@ PvP tags, renaming, and closing the storage by swiping down. It evaluates search
 
 | Scenario | What it simulates |
 |---|---|
-| `basic` | the default phone, all four steps |
+| `basic` | the default phone, the first four steps |
 | `keyboard_auto` | the keyboard opens by itself in the new-tag dialog |
 | `enter_creates_tag` | Enter in the new-tag dialog creates the tag right away |
 | `colors_in_two_rows` | the tag colors are laid out in two rows |
@@ -42,7 +42,12 @@ PvP tags, renaming, and closing the storage by swiping down. It evaluates search
 | `only_duplicates` | tags through a CP search combined with the duplicates search |
 | `no_select_all` | bigger storage, no SELECT ALL in the search results |
 | `real_phone` | behaves like a real iPhone: the list moves 1.6× further than the finger, a bigger storage with legendaries, the CP in the appraisal is sometimes unreadable, the ▶ arrow is missing on the last Pokémon |
-| `real_phone_all_steps` | all four steps on the big storage, like a real iPhone |
+| `real_phone_all_steps` | the first four steps on the big storage, like a real iPhone |
+| `battle_tags` | Battle tags from the app's picks: an existing `Raid` tag comes off two Pokémon no longer picked, a missing `GL tým` gets created in its color |
+| `battle_all_steps` | all five steps, Battle tags last |
+| `weak_pokemon` | everyone under 80 % IV gets the transfer tag, the safeguards keep legendaries, regional forms and the best of each species |
+| `weak_with_duplicates` | the weak sweep together with duplicates and IV tags (the same tag from two steps) |
+| `weak_no_keeps` | every safeguard off: even legendaries under the limit get tagged |
 | `duplicated_list` | inserts duplicated cells and a cell with a nonsense CP into the scanned list |
 | `multiselect_overshoots` | scrolling in the multi-Pokémon selection goes further than it should |
 | `cp_missing_in_batch` | a Pokémon with a misread CP is missing from a batch; the bot skips it and tags the rest |

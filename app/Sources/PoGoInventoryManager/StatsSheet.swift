@@ -997,6 +997,8 @@ enum StatsTagColor {
         if name == c.removeTag { return c.removeTagColor.swatch }
         if let t = c.ivTags.first(where: { $0.name == name }) { return t.color.swatch }
         if let l = c.pvp.all.first(where: { $0.league.name == name }) { return l.league.color.swatch }
+        if name == c.battle.raid.name { return c.battle.raid.color.swatch }
+        if let t = c.battle.teams.first(where: { $0.tag.name == name }) { return t.tag.color.swatch }
         return TagColor.gray.swatch
     }
 }

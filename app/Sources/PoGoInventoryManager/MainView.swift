@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The app's main window: the Overview and Stats screens (switched in the toolbar) and the consent overlay.
+/// The app's main window: the Overview, Stats and Battle screens (switched in the toolbar) and the consent overlay.
 /// The settings slide in from the right (Settings button in the toolbar).
 struct MainView: View {
     @EnvironmentObject private var store: ConfigStore
@@ -12,6 +12,8 @@ struct MainView: View {
     @State private var page = Page.overview
     /// Stats are built once (shortly after launch) and then kept; they are only hidden.
     @State private var statsBuilt = false
+    /// Battle is built the first time it is opened and then kept.
+    @State private var battleBuilt = false
     /// The panel is slid out (only its offset is animated).
     @State private var panelShown = false
     /// While the panel slides, the main content has a fixed width so it isn't re-laid out on every frame.
@@ -29,7 +31,7 @@ struct MainView: View {
     private var showConsent: Bool { askConsent ?? !Consent.isGiven(store.config) }
 
     /// The screen in the main part of the window (switched in the toolbar).
-    enum Page { case overview, stats }
+    enum Page { case overview, stats, battle }
 
     /// Minimum width of the main content; below it the cards get squeezed.
     private static let mainMinWidth: CGFloat = 720
@@ -41,6 +43,9 @@ struct MainView: View {
                 pageView(.overview) { MainColumn(fresh: $fresh) }
                 if statsBuilt {
                     pageView(.stats) { StatsView(startRun: startFromStats) }
+                }
+                if battleBuilt {
+                    pageView(.battle) { BattleView(startRun: startFromStats) }
                 }
             }
             .frame(width: frozenMainWidth)
@@ -64,9 +69,18 @@ struct MainView: View {
             if askConsent == nil { askConsent = !Consent.isGiven(store.config) }
             Updater.shared.start { [store] in store.config.checkUpdates }
             StatsStore.shared.refresh(removeTag: store.config.removeTag)   // so Stats are ready right away
+            BattleStore.shared.appear()       // the game data and bosses (Battle tags, new boss notifications)
+            BossAlerts.enabled = store.config.battle.notifyBosses
+            BossAlerts.setUp()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { statsBuilt = true }
         }
         .onChange(of: runner.finishedAt) { _, _ in StatsStore.shared.refresh(removeTag: store.config.removeTag) }
+        .onReceive(StatsStore.shared.$stats) { BattleStore.shared.buildTeams($0?.mons ?? []) }
+        .onChange(of: store.config.battle.notifyBosses) { _, on in BossAlerts.enabled = on }
+        .onReceive(NotificationCenter.default.publisher(for: BossAlerts.openNote)) { note in
+            BattleStore.shared.focusBoss = note.object as? String
+            showPage(.battle)
+        }
         .foregroundStyle(Theme.text)
         .frame(minWidth: Self.mainMinWidth + (minLocked ? settingsWidth : 0), minHeight: 660)
         .background(WindowReader(ref: window))
@@ -95,18 +109,18 @@ struct MainView: View {
         #endif
     }
 
-    /// From the Stats screen (empty state, coverage window): back to the overview and start a run with the steps
-    /// selected there.
+    /// From the Stats or Battle screen (empty state, coverage window): back to the overview and start a run with
+    /// the steps selected there.
     private func startFromStats() {
         showPage(.overview)
         guard !runner.isRunning else { return }
-        store.save()
+        store.prepareRun()
         runner.start(steps: store.config.steps, fresh: false)
     }
 
     #if DEBUG
     /// Appearance check: IVORY_PREVIEW=state, IVORY_SETTINGS=1, IVORY_STEPS=duplicates,iv,pvp,rename,
-    /// IVORY_PAGE=stats, IVORY_CONFETTI=1. README screenshots: IVORY_SHOTS=folder (see Shots.swift).
+    /// IVORY_PAGE=stats|battle, IVORY_CONFETTI=1. README screenshots: IVORY_SHOTS=folder (see Shots.swift).
     private func applyPreview() {
         if ShotSession.isActive { return ShotSession.start(runner: runner, store: store) }
         let env = ProcessInfo.processInfo.environment
@@ -115,9 +129,11 @@ struct MainView: View {
         if let raw = env["IVORY_STEPS"] {
             let on = Set(raw.split(separator: ","))
             store.config.steps = Steps(duplicates: on.contains("duplicates"), iv: on.contains("iv"),
-                                       pvp: on.contains("pvp"), rename: on.contains("rename"))
+                                       pvp: on.contains("pvp"), rename: on.contains("rename"), battle: on.contains("battle"),
+                                       weak: on.contains("weak"))
         }
         if env["IVORY_PAGE"] == "stats" { statsBuilt = true; page = .stats }
+        if env["IVORY_PAGE"] == "battle" { battleBuilt = true; page = .battle }
         if env["IVORY_SETTINGS"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { setSettings(true) }
         }
@@ -217,6 +233,7 @@ struct MainView: View {
     private func showPage(_ new: Page) {
         guard new != page else { return }
         if new == .stats { statsBuilt = true }
+        if new == .battle { battleBuilt = true }
         Crossfade.run(in: window.window) { page = new }
     }
 
@@ -282,6 +299,11 @@ struct MainView: View {
             }
             .buttonStyle(HeaderButtonStyle(active: page == .stats))
             .help(tr("Co IVory ví o tvém inventáři", "What IVory knows about your storage"))
+            Button { showPage(.battle) } label: {
+                Label("Battle", systemImage: "figure.fencing")
+            }
+            .buttonStyle(HeaderButtonStyle(active: page == .battle))
+            .help(tr("Countery proti raid bossům a PvP týmy z tvého úložiště", "Raid counters and PvP teams from your storage"))
             Button { runner.openResults() } label: {
                 Label(tr("Výsledky", "Results"), systemImage: "folder")
             }
@@ -329,15 +351,15 @@ struct MainColumn: View {
 
     // MARK: - Steps
 
-    /// Four cards side by side; when space is tight (e.g. with the settings open), two by two.
+    /// Six cards side by side; when space is tight (e.g. with the settings open), three and three.
     private var stepsRow: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 12) {
                 ForEach(Runner.Step.allCases) { stepCard($0) }
             }
             Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-                GridRow { stepCard(.duplicates); stepCard(.iv) }
-                GridRow { stepCard(.pvp); stepCard(.rename) }
+                GridRow { stepCard(.duplicates); stepCard(.iv); stepCard(.pvp) }
+                GridRow { stepCard(.rename); stepCard(.battle); stepCard(.weak) }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -354,8 +376,8 @@ struct MainColumn: View {
                 step.set(&store.config.steps, !on)
             }
         }
-        // ViewThatFits compares ideal widths: below ~200 points per card the text wraps word by word
-        .frame(minWidth: 0, idealWidth: 200, maxWidth: .infinity, maxHeight: .infinity)
+        // ViewThatFits compares ideal widths: below ~180 points per card the text wraps word by word
+        .frame(minWidth: 0, idealWidth: 180, maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func detail(_ step: Runner.Step) -> String {
@@ -373,6 +395,17 @@ struct MainColumn: View {
                 return tr("V rozsahu \(range) nejsou žádné kusy.", "No Pokémon in the \(range) range.")
             }
             return tr("Kusům s IV \(range) dá jméno podle šablony.", "Names Pokémon with IV \(range) by your template.")
+        case .battle:
+            return tr("Otaguje nejlepší raid útočníky (\(c.battle.raid.name)) a PvP týmy z Battle.",
+                      "Tags your best raid attackers (\(c.battle.raid.name)) and the PvP teams from Battle.")
+        case .weak:
+            if let box = lastBox, c.weak.maxIV > 0 {
+                let n = box.count(in: 0...(c.weak.maxIV - 1))
+                return tr("Kusům pod \(c.weak.maxIV) % IV dá tag \(c.removeTag) (\(n) v inventáři).",
+                          "Tags Pokémon under \(c.weak.maxIV)% IV with \(c.removeTag) (\(n) in your storage).")
+            }
+            return tr("Kusům pod \(c.weak.maxIV) % IV dá tag \(c.removeTag).",
+                      "Tags Pokémon under \(c.weak.maxIV)% IV with \(c.removeTag).")
         }
     }
 

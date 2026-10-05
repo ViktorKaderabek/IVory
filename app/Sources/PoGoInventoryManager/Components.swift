@@ -69,7 +69,25 @@ struct PhasePanel: View {
     let steps: Steps
 
     var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            row(compact: false)
+            VStack(alignment: .leading, spacing: 8) {
+                row(compact: true)
+                if let current = Runner.Step.allCases.first(where: { $0.rawValue == current }) {
+                    Text("\(current.rawValue). \(current.phaseTitle)")
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                }
+            }
+        }
+        .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
+        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: runner.stats.phase)
+        .animation(.easeOut(duration: 0.5), value: runner.phaseProgress)
+    }
+
+    private func row(compact: Bool) -> some View {
+        HStack(spacing: compact ? 8 : 12) {
             ForEach(Runner.Step.allCases) { step in
                 if step != .duplicates {
                     GeometryReader { geo in
@@ -85,17 +103,12 @@ struct PhasePanel: View {
                         }
                     }
                     .frame(height: 4)
-                    .frame(minWidth: 24)
+                    .frame(minWidth: compact ? 12 : 24)
                 }
-                PhaseStep(number: step.rawValue, title: step.phaseTitle, state: state(step))
+                PhaseStep(number: step.rawValue, title: step.phaseTitle, state: state(step), compact: compact)
                     .fixedSize()
             }
         }
-        .padding(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-        .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.border))
-        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: runner.stats.phase)
-        .animation(.easeOut(duration: 0.5), value: runner.phaseProgress)
     }
 
     private var shownSteps: Steps { HeroState(runner: runner) == .ready ? steps : runner.steps }
@@ -146,6 +159,8 @@ struct PhaseStep: View {
     let number: Int
     let title: String
     let state: State
+    /// Only the numbered circle: the narrow layout, where six phases with their names don't fit.
+    var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -165,14 +180,17 @@ struct PhaseStep: View {
             }
             .frame(width: 30, height: 30)
             .animation(.spring(response: 0.4, dampingFraction: 0.6), value: state)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                Text(caption)
-                    .font(.system(size: 12))
-                    .foregroundStyle(state == .active ? Theme.teal : Theme.muted)
+            if !compact {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 14, weight: .semibold))
+                    Text(caption)
+                        .font(.system(size: 12))
+                        .foregroundStyle(state == .active ? Theme.teal : Theme.muted)
+                }
             }
         }
         .opacity(state == .skipped ? 0.45 : 1)
+        .help(compact ? "\(title) · \(caption)" : "")
     }
 
     @ViewBuilder private var background: some View {

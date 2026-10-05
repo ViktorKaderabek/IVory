@@ -43,20 +43,155 @@ struct IVTag: Codable, Identifiable, Hashable {
     }
 }
 
-/// Which steps a run does. The order is always duplicates → IV tags → PvP tags → renaming.
+/// Which steps a run does. The order is always duplicates → IV tags → PvP tags → renaming → Battle tags.
 struct Steps: Codable, Equatable {
     var duplicates = true
     var iv = true
     var pvp = false
     var rename = false
+    var battle = false
+    var weak = false
 
-    /// For the bot: --steps duplicates,iv,pvp,rename
+    /// For the bot: --steps duplicates,iv,pvp,rename,battle,weak
     var argument: String {
-        [("duplicates", duplicates), ("iv", iv), ("pvp", pvp), ("rename", rename)]
+        [("duplicates", duplicates), ("iv", iv), ("pvp", pvp), ("rename", rename), ("battle", battle), ("weak", weak)]
             .filter(\.1).map(\.0).joined(separator: ",")
     }
 
-    var count: Int { [duplicates, iv, pvp, rename].filter { $0 }.count }
+    var count: Int { [duplicates, iv, pvp, rename, battle, weak].filter { $0 }.count }
+}
+
+extension Steps {
+    /// Lenient decoding (a config.json from before the Battle step keeps its steps); in an extension so the
+    /// memberwise initializer stays.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Steps()
+        self.init(duplicates: try c.decodeIfPresent(Bool.self, forKey: .duplicates) ?? d.duplicates,
+                  iv: try c.decodeIfPresent(Bool.self, forKey: .iv) ?? d.iv,
+                  pvp: try c.decodeIfPresent(Bool.self, forKey: .pvp) ?? d.pvp,
+                  rename: try c.decodeIfPresent(Bool.self, forKey: .rename) ?? d.rename,
+                  battle: try c.decodeIfPresent(Bool.self, forKey: .battle) ?? d.battle,
+                  weak: try c.decodeIfPresent(Bool.self, forKey: .weak) ?? d.weak)
+    }
+}
+
+/// Weak Pokémon (the weak step): everyone under maxIV % gets the Removable tag, except the ones the keep
+/// switches protect. The bot can't tell shadow, lucky or Dynamax apart, so for those there is keepTag: a tag
+/// you put on them in the game yourself.
+struct WeakConfig: Codable, Equatable {
+    var maxIV = 70
+    var keepLegendary = true
+    var keepMythical = true
+    var keepUltraBeast = true
+    var keepRegional = true
+    var keepBest = true
+    var keepBattle = true
+    var keepTag = ""
+
+    enum CodingKeys: String, CodingKey {
+        case maxIV = "max_iv"
+        case keepLegendary = "keep_legendary"
+        case keepMythical = "keep_mythical"
+        case keepUltraBeast = "keep_ultra_beast"
+        case keepRegional = "keep_regional"
+        case keepBest = "keep_best"
+        case keepBattle = "keep_battle"
+        case keepTag = "keep_tag"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = WeakConfig()
+        maxIV = (try? c.decodeIfPresent(Int.self, forKey: .maxIV)) ?? d.maxIV
+        keepLegendary = (try? c.decodeIfPresent(Bool.self, forKey: .keepLegendary)) ?? d.keepLegendary
+        keepMythical = (try? c.decodeIfPresent(Bool.self, forKey: .keepMythical)) ?? d.keepMythical
+        keepUltraBeast = (try? c.decodeIfPresent(Bool.self, forKey: .keepUltraBeast)) ?? d.keepUltraBeast
+        keepRegional = (try? c.decodeIfPresent(Bool.self, forKey: .keepRegional)) ?? d.keepRegional
+        keepBest = (try? c.decodeIfPresent(Bool.self, forKey: .keepBest)) ?? d.keepBest
+        keepBattle = (try? c.decodeIfPresent(Bool.self, forKey: .keepBattle)) ?? d.keepBattle
+        keepTag = (try? c.decodeIfPresent(String.self, forKey: .keepTag)) ?? d.keepTag
+    }
+}
+
+/// Battle tags (the battle step): IVory picks the Pokémon, the bot tags them in the game. "Raid" goes to the best
+/// raid attackers of each attack type (found in the game with e.g. #Raid&@steel), a team tag to the PvP team chosen
+/// on the Battle screen. The bot takes the tag off anyone who is no longer picked.
+struct BattleConfig: Codable, Equatable {
+    struct RaidTag: Codable, Equatable {
+        var enabled = true
+        var name = "Raid"
+        var color = TagColor.red
+        var perType = 6               // the best this many for each attack type
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, name, color
+            case perType = "per_type"
+        }
+    }
+
+    struct TeamTag: Codable, Equatable {
+        var enabled = true
+        var name: String
+        var color: TagColor
+        var team: [String] = []       // the chosen team (PvPoke ids); empty = IVory's first team
+    }
+
+    /// A tag with the Pokémon picked for it, by CP and IVs (what the bot reads in the game).
+    struct Pick: Codable, Equatable {
+        struct Mon: Codable, Equatable {
+            var cp: Int
+            var iv: [Int]
+            var name: String
+            /// The species, so the bot still finds it after a power-up (CP changes, the IVs don't).
+            var sid: String?
+        }
+        var name: String
+        var color: TagColor
+        var mons: [Mon]
+    }
+
+    var raid = RaidTag()
+    var great = TeamTag(name: "GL Team", color: .blue)
+    var ultra = TeamTag(name: "UL Team", color: .yellow)
+    var master = TeamTag(name: "ML Team", color: .purple)
+    /// Notifications about new raid bosses (the app's, the bot doesn't use it).
+    var notifyBosses = true
+    /// Worked out by the app when a run starts (BattleStore.picks), read by the bot.
+    var tags: [Pick] = []
+
+    var teams: [(league: PvPLeague, tag: TeamTag)] { [(.great, great), (.ultra, ultra), (.master, master)] }
+    var tagNames: [String] { ([raid.name] + teams.map(\.tag.name)).filter { !$0.isEmpty } }
+
+    func team(_ league: PvPLeague) -> TeamTag { league == .great ? great : league == .ultra ? ultra : master }
+
+    mutating func setTeam(_ league: PvPLeague, _ forms: [String]) {
+        switch league {
+        case .great: great.team = forms
+        case .ultra: ultra.team = forms
+        case .master: master.team = forms
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case raid, great, ultra, master, tags
+        case notifyBosses = "notify_bosses"
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = BattleConfig()
+        raid = (try? c.decodeIfPresent(RaidTag.self, forKey: .raid)) ?? d.raid
+        great = (try? c.decodeIfPresent(TeamTag.self, forKey: .great)) ?? d.great
+        ultra = (try? c.decodeIfPresent(TeamTag.self, forKey: .ultra)) ?? d.ultra
+        master = (try? c.decodeIfPresent(TeamTag.self, forKey: .master)) ?? d.master
+        notifyBosses = (try? c.decodeIfPresent(Bool.self, forKey: .notifyBosses)) ?? d.notifyBosses
+        tags = (try? c.decodeIfPresent([Pick].self, forKey: .tags)) ?? d.tags
+    }
 }
 
 /// PvP league: a Pokémon whose IV rank is within maxRank gets the tag.
@@ -181,6 +316,8 @@ struct AppConfig: Codable, Equatable {
     var steps = Steps()
     var pvp = PvPConfig()
     var rename = RenameConfig()
+    var battle = BattleConfig()
+    var weak = WeakConfig()
     var language = AppLanguage.system
     /// Check for updates at launch and once every 24 hours (Updater.swift).
     var checkUpdates = true
@@ -212,6 +349,7 @@ struct AppConfig: Codable, Equatable {
     /// Every tag the bot uses (the choices in the "Only Pokémon with a tag" menu).
     var allTagNames: [String] {
         [removeTag] + ivTags.sorted { $0.min > $1.min }.map(\.name).filter { !$0.isEmpty } + pvp.all.map(\.league.name)
+            + battle.tagNames
     }
 
     enum CodingKeys: String, CodingKey {
@@ -224,7 +362,7 @@ struct AppConfig: Codable, Equatable {
         case ivTags = "iv_tags"
         case recheckTagged = "recheck_tagged"
         case maxGroups = "max_groups"
-        case steps, pvp, rename, language
+        case steps, pvp, rename, battle, weak, language
         case checkUpdates = "check_updates"
         case consentVersion = "consent_version"
         case consentAt = "consent_at"
@@ -250,6 +388,8 @@ struct AppConfig: Codable, Equatable {
         steps = (try? c.decodeIfPresent(Steps.self, forKey: .steps)) ?? d.steps
         pvp = (try? c.decodeIfPresent(PvPConfig.self, forKey: .pvp)) ?? d.pvp
         rename = (try? c.decodeIfPresent(RenameConfig.self, forKey: .rename)) ?? d.rename
+        battle = (try? c.decodeIfPresent(BattleConfig.self, forKey: .battle)) ?? d.battle
+        weak = (try? c.decodeIfPresent(WeakConfig.self, forKey: .weak)) ?? d.weak
         language = (try? c.decodeIfPresent(AppLanguage.self, forKey: .language)) ?? d.language
         checkUpdates = (try? c.decodeIfPresent(Bool.self, forKey: .checkUpdates)) ?? d.checkUpdates
         consentVersion = (try? c.decodeIfPresent(Int.self, forKey: .consentVersion)) ?? d.consentVersion
@@ -309,6 +449,15 @@ final class ConfigStore: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.save()
         }
+    }
+
+    /// Before a run: with the Battle step on, the Pokémon for the Battle tags are picked now (from the current
+    /// storage and game data; when those aren't ready, the last picks stay), then everything is saved for the bot.
+    func prepareRun() {
+        if config.steps.battle, let picks = BattleStore.shared.picks(for: config.battle) {
+            config.battle.tags = picks
+        }
+        save()
     }
 
     func save() {

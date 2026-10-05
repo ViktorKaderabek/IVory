@@ -9,7 +9,7 @@ final class Runner: ObservableObject {
 
     /// A step of the run (cards with checkboxes; the order is fixed).
     enum Step: Int, CaseIterable, Identifiable {
-        case duplicates = 1, iv, pvp, rename
+        case duplicates = 1, iv, pvp, rename, battle, weak
 
         var id: Int { rawValue }
 
@@ -19,6 +19,8 @@ final class Runner: ObservableObject {
             case .iv: return tr("IV tagy", "IV tags")
             case .pvp: return tr("PvP tagy", "PvP tags")
             case .rename: return tr("Přejmenovat", "Rename")
+            case .battle: return tr("Battle tagy", "Battle tags")
+            case .weak: return tr("Slabé kusy", "Weak Pokémon")
             }
         }
 
@@ -31,6 +33,8 @@ final class Runner: ObservableObject {
             case .iv: return "tag"
             case .pvp: return "trophy"
             case .rename: return "pencil"
+            case .battle: return "figure.fencing"
+            case .weak: return "arrow.down.circle"
             }
         }
 
@@ -40,6 +44,8 @@ final class Runner: ObservableObject {
             case .iv: return s.iv
             case .pvp: return s.pvp
             case .rename: return s.rename
+            case .battle: return s.battle
+            case .weak: return s.weak
             }
         }
 
@@ -49,6 +55,8 @@ final class Runner: ObservableObject {
             case .iv: s.iv = on
             case .pvp: s.pvp = on
             case .rename: s.rename = on
+            case .battle: s.battle = on
+            case .weak: s.weak = on
             }
         }
     }
@@ -62,9 +70,11 @@ final class Runner: ObservableObject {
         var ivTagged = 0
         var pvpTagged = 0
         var renamed = 0
+        var battleTagged = 0
+        var weakTagged = 0
         var skipped = 0
         var errors = 0
-        var phase = 0          // 0 = preparation, 1 = duplicates, 2 = IV tags, 3 = PvP tags, 4 = renaming
+        var phase = 0          // 0 = preparation, then 1…6 in the order of Step
     }
 
     struct LogLine: Identifiable {
@@ -254,6 +264,16 @@ final class Runner: ObservableObject {
                 stats.removable += items.count
                 flash(tag, items.count)
             }
+            if let tag = e["tag"] as? String, let items = e["items"] as? [Any], e["remove"] as? Bool != true,
+               stats.phase == Step.battle.rawValue {
+                stats.battleTagged += items.count
+                activity = tr("Battle tagy", "Battle tags") + " · \(tag) +\(items.count)"
+            }
+            if let items = e["items"] as? [Any], e["remove"] as? Bool != true, stats.phase == Step.weak.rawValue {
+                stats.weakTagged += items.count
+                stats.removable += items.count
+                activity = tr("Slabé kusy", "Weak Pokémon") + " · +\(items.count)"
+            }
         case "iv":
             if let status = e["status"] as? String {
                 if status == "skip" { stats.skipped += 1 }
@@ -325,10 +345,10 @@ final class Runner: ObservableObject {
         stats = Stats(); phaseProgress = nil; tagCounts = [:]; boxTotal = 0; startedAt = nil; finishedAt = nil
         for l in sample { lines.append(LogLine(id: nextId, text: l)); nextId += 1 }
         let now = Date()
-        steps = Steps(duplicates: true, iv: true, pvp: true, rename: true)
+        steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
         let counts = ["Removable": 38, "100% Perfect": 2, "95-99% Insane": 14, "90-95% Amazing": 31, "85-90% Great": 46,
                       "80-85% Good": 58, "70-80% Mid": 97, "70-0% Garbage": 164, "Great League": 24,
-                      "Ultra League": 18, "Master League": 9]
+                      "Ultra League": 18, "Master League": 9, "Raid": 61, "GL Team": 3, "UL Team": 3, "ML Team": 3]
         switch state {
         case "running":
             isRunning = true
@@ -341,7 +361,8 @@ final class Runner: ObservableObject {
             startedAt = now.addingTimeInterval(-1834)
         case "done":
             outcome = .done
-            stats = Stats(measured: 142, removable: 38, ivTagged: 412, pvpTagged: 51, renamed: 86, errors: 3, phase: 4)
+            stats = Stats(measured: 142, removable: 164, ivTagged: 412, pvpTagged: 51, renamed: 86, battleTagged: 70,
+                          weakTagged: 126, errors: 3, phase: 6)
             tagCounts = counts
             boxTotal = 499
             startedAt = now.addingTimeInterval(-4328); finishedAt = now

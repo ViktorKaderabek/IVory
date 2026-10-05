@@ -20,7 +20,7 @@ from .classic import process, process_all
 from .scan import FastState
 from .batch import search_empty
 from .inventory import ensure_scanned, remember_box
-from .steps import fast_duplicates, fast_iv, fast_pvp, fast_rename
+from .steps import fast_battle, fast_duplicates, fast_iv, fast_pvp, fast_rename, fast_weak
 
 
 def load_config():
@@ -70,6 +70,25 @@ def load_config():
         if k in rn:
             cfg.RENAME[k] = bool(rn[k])
     cfg.RENAME["only_tag"] = str(rn.get("only_tag") or "").strip()
+    # Battle tags; a name the other steps manage is left out (the battle step would take it off everyone else)
+    taken = {alnum(cfg.TAG_NAME)} | {alnum(n) for _, n in cfg.IV_TAGS} | {alnum(lg["name"]) for lg in cfg.PVP.values()}
+    battle = []
+    for t in (c.get("battle") or {}).get("tags") or []:
+        name = str((t or {}).get("name") or "").strip()
+        if not name or alnum(name) in taken:
+            continue
+        taken.add(alnum(name))
+        mons = [{"cp": int(m["cp"]), "iv": tuple(int(v) for v in m["iv"]), "sid": str(m.get("sid") or "")}
+                for m in t.get("mons") or []
+                if isinstance(m, dict) and m.get("cp") and isinstance(m.get("iv"), list) and len(m["iv"]) == 3]
+        battle.append({"name": name, "color": cfg.color_name(t.get("color"), "gray"), "mons": mons})
+    cfg.BATTLE["tags"] = battle
+    wk = c.get("weak") or {}
+    cfg.WEAK["max_iv"] = max(0, min(100, int(wk.get("max_iv", cfg.WEAK["max_iv"]))))
+    for k in ("keep_legendary", "keep_mythical", "keep_ultra_beast", "keep_regional", "keep_best", "keep_battle"):
+        if k in wk:
+            cfg.WEAK[k] = bool(wk[k])
+    cfg.WEAK["keep_tag"] = str(wk.get("keep_tag") or "").strip()
     cfg.MAX_GROUPS = int(c.get("max_groups", cfg.MAX_GROUPS))
 
 
@@ -89,11 +108,13 @@ def friendly_problem(e):
              f"Connection or game hiccup ({short_err(e)[:120]}) – the bot tries again.")
 
 
-PHASE_OF = {"duplicates": 1, "iv": 2, "pvp": 3, "rename": 4}
+PHASE_OF = {"duplicates": 1, "iv": 2, "pvp": 3, "rename": 4, "battle": 5, "weak": 6}
 PHASE_TITLE = {1: ("1. část: hledám duplicity", "Part 1: finding duplicates"),
                2: ("2. část: třídím celý inventář do IV tagů", "Part 2: sorting the whole storage into IV tags"),
                3: ("3. část: PvP tagy podle pořadí IV v ligách", "Part 3: PvP tags by IV rank in the leagues"),
-               4: ("4. část: přejmenování", "Part 4: renaming")}
+               4: ("4. část: přejmenování", "Part 4: renaming"),
+               5: ("5. část: Battle tagy pro raidy a PvP týmy", "Part 5: Battle tags for raids and PvP teams"),
+               6: ("6. část: slabé kusy do tagu na přenesení", "Part 6: weak Pokémon into the transfer tag")}
 
 
 def phase_title(n):
@@ -137,7 +158,7 @@ def run_phases(bot, book, book2, mem, args, report, st2):
                 step(phase_title(phase))
             ensure_app(bot)
             # Duplicates + another step: the whole storage is read once and the duplicates take their IV from it
-            shared = phase == 1 and bot.fast and any(x in args.steps for x in ("iv", "pvp", "rename"))
+            shared = phase == 1 and bot.fast and any(x in args.steps for x in ("iv", "pvp", "rename", "battle", "weak"))
             full_first = shared and not st2.scanned
             bot.mode = "all" if phase != 1 or full_first else "duplicit"
             fr = ensure_box(bot)
@@ -203,8 +224,12 @@ def run_phases(bot, book, book2, mem, args, report, st2):
                     process_all(bot, book2, mem, args, report)
             elif phase == 3:
                 fast_pvp(bot, mem, args, report, st2)
-            else:
+            elif phase == 4:
                 fast_rename(bot, mem, args, report, st2)
+            elif phase == 5:
+                fast_battle(bot, mem, args, report, st2)
+            else:
+                fast_weak(bot, mem, args, report, st2)
             phase, need_top = next_phase(), True
             if phase is None:
                 return
@@ -279,7 +304,7 @@ def main():
     ap.add_argument("--fresh", action="store_true", help="IV z paměti nepoužívat, změřit znovu")
     ap.add_argument("--only-iv", action="store_true", help="jen 2. část: celý inventář do IV tagů")
     ap.add_argument("--no-iv", action="store_true", help="jen duplicity, bez 2. části")
-    ap.add_argument("--steps", default="", help="kroky oddělené čárkou: duplicates,iv,pvp,rename")
+    ap.add_argument("--steps", default="", help="kroky oddělené čárkou: duplicates,iv,pvp,rename,battle,weak")
     args = ap.parse_args()
     load_config()
     args.steps = parse_steps(args)
@@ -290,7 +315,8 @@ def main():
     (run_dir / "iv").mkdir(parents=True, exist_ok=True)
     cfg.LOG_FILE = run_dir / "log.txt"
     names = {"duplicates": T("duplicity", "duplicates"), "iv": T("IV tagy", "IV tags"), "pvp": T("PvP tagy", "PvP tags"),
-             "rename": T("přejmenování", "renaming")}
+             "rename": T("přejmenování", "renaming"), "battle": T("Battle tagy", "Battle tags"),
+             "weak": T("slabé kusy", "weak Pokémon")}
     parts = [names[x] for x in cfg.STEPS if x in args.steps]
     log(T("Úkol: ", "Task: ") + " + ".join(parts))
     if "duplicates" in args.steps:

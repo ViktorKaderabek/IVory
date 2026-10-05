@@ -6,7 +6,7 @@
 #  Appium server and the bot. Used by both the app and Terminal.
 #
 #    bash scripts/run.sh                                   # duplicates + IV tags
-#    bash scripts/run.sh --steps duplicates,iv,pvp,rename  # any steps
+#    bash scripts/run.sh --steps duplicates,iv,pvp,rename,battle,weak  # any steps
 #    bash scripts/run.sh --fresh                           # don't use IVs from memory
 #
 #  Whatever the system lacks is downloaded into ~/.pogo/runtime (no Homebrew, no password).
@@ -197,6 +197,19 @@ if ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation" 
   "$VENV/bin/python" -m pip install -q --disable-pip-version-check --upgrade pip
   "$VENV/bin/python" -m pip install -q --disable-pip-version-check --prefer-binary -r "$CORE/requirements.txt" \
     || die "$(t "Instalace Python knihoven selhala." "Installing the Python libraries failed.")"
+fi
+
+# --- 3b) Game data (PvPoke + PokeMiners) ----------------------------------
+# Not part of IVory: downloaded into ~/.pogo/pokedata.json and refreshed once a week (new Pokémon),
+# or right away when a copy from an older IVory lacks the Battle data. An old copy is enough when the refresh fails.
+DATA="$WORK/pokedata.json"
+if [ ! -f "$DATA" ] || [ -n "$(find "$DATA" -mtime +6)" ] || ! grep -q '"battle"' "$DATA"; then
+  say "$(t "Stahuji herní data (PvPoke, PokeMiners)..." "Downloading the game data (PvPoke, PokeMiners)...")"
+  if ! "$VENV/bin/python" "$CORE/pokedata.py"; then
+    [ -f "$DATA" ] || die "$(t "Herní data se nepodařilo stáhnout. Zkontroluj připojení k internetu." \
+                               "Couldn't download the game data. Check your internet connection.")"
+    say "$(t "Herní data se nepodařilo obnovit, použiji uložená." "Couldn't refresh the game data, using the saved copy.")"
+  fi
 fi
 
 # --- 4) Appium server ----------------------------------------------------

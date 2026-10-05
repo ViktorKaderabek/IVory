@@ -39,6 +39,8 @@ enum Theme {
     static let pinkTint = Color.adaptive(dark: .oklch(0.32, 0.07, 350), light: .oklch(0.93, 0.04, 350))
     static let yellow = Color.adaptive(dark: .oklch(0.88, 0.12, 92), light: .oklch(0.45, 0.1, 80))
     static let yellowTint = Color.adaptive(dark: .oklch(0.34, 0.07, 90), light: .oklch(0.93, 0.07, 92))
+    static let gold = Color.adaptive(dark: .oklch(0.8, 0.15, 85), light: .oklch(0.5, 0.12, 75))
+    static let goldTint = Color.adaptive(dark: .oklch(0.34, 0.07, 85), light: .oklch(0.92, 0.06, 85))
 
     // MARK: Fixed colors (the same in both modes)
 

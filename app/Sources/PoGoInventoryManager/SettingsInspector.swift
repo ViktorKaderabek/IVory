@@ -59,6 +59,8 @@ struct SettingsContent: View {
                 section("iv", tr("IV tagy", "IV tags"), "tag", tagCount(store.config.ivTags.filter { !$0.name.isEmpty }.count)) { ivTags }
                 section("pvp", tr("PvP tagy", "PvP tags"), "trophy", leagueCount) { pvpTags }
                 section("rename", tr("Přejmenování", "Renaming"), "pencil", rangeText) { rename }
+                section("battle", tr("Battle tagy", "Battle tags"), "figure.fencing", battleSummary) { battleTags }
+                section("weak", tr("Slabé kusy", "Weak Pokémon"), "arrow.down.circle", weakSummary) { weak }
                 section("device", "iPhone", "iphone.gen3", deviceSummary) { device }
                 section("advanced", tr("Pokročilé", "Advanced"), "slider.horizontal.3", "") { advanced }
             }
@@ -126,6 +128,89 @@ struct SettingsContent: View {
     }
 
     private var rangeText: String { pctRange(store.config.rename.min, store.config.rename.max) }
+
+    private var weakSummary: String {
+        let c = store.config.weak
+        let kept = [c.keepLegendary, c.keepMythical, c.keepUltraBeast, c.keepRegional, c.keepBest, c.keepBattle]
+            .filter { $0 }.count + (c.keepTag.isEmpty ? 0 : 1)
+        return tr("pod \(c.maxIV) % · \(kept) pojistek", "under \(c.maxIV)% · \(kept) safeguards")
+    }
+
+    // MARK: - Weak Pokémon
+
+    private var weak: some View {
+        let c = store.config.weak
+        let inRange = c.maxIV > 0 ? lastBox?.count(in: 0...(c.maxIV - 1)) : 0
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(tr("Označit kusy pod", "Tag Pokémon under")).font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Text(percentText(c.maxIV)).font(.system(size: 15, weight: .semibold).monospacedDigit())
+                        .contentTransition(.numericText(value: Double(c.maxIV)))
+                }
+                Slider(value: Binding(get: { Double(c.maxIV) }, set: { store.config.weak.maxIV = Int($0.rounded()) }),
+                       in: 0...100, step: 1)
+                    .tint(Theme.accent)
+                Text(inRange.map { n in
+                        let count = trCount(n, cs: "kus", "kusy", "kusů", en: "Pokémon", "Pokémon")
+                        return tr("\(count) v inventáři dostane tag \(store.config.removeTag), pokud je nechrání pojistka. Z posledního měření.",
+                                  "\(count) in your storage would get the \(store.config.removeTag) tag unless a safeguard keeps them. From the last measurement.")
+                    } ?? tr("Kusy pod touhle hranicí dostanou tag \(store.config.removeTag).",
+                            "Pokémon under this threshold get the \(store.config.removeTag) tag."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 4)
+            Rectangle().fill(Theme.border).frame(height: 1)
+            Text(tr("Pojistky: tyhle se neoznačí", "Safeguards: these are left alone"))
+                .font(.system(size: 13, weight: .medium)).padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: 8) {
+                keepRow(tr("Legendární", "Legendary"), $store.config.weak.keepLegendary)
+                keepRow(tr("Mýtičtí", "Mythical"), $store.config.weak.keepMythical)
+                keepRow(tr("Ultra Beasts", "Ultra Beasts"), $store.config.weak.keepUltraBeast)
+                keepRow(tr("Regionální formy", "Regional forms"), $store.config.weak.keepRegional,
+                        detail: tr("Alolan, Galarian, Hisuian, Paldean", "Alolan, Galarian, Hisuian, Paldean"))
+                keepRow(tr("Nejlepší svého druhu", "The best of each species"), $store.config.weak.keepBest,
+                        detail: tr("nikdy nepřijdeš o poslední kus druhu", "so you never lose your last one of a species"))
+                keepRow(tr("S PvP nebo Battle tagem", "With a PvP or Battle tag"), $store.config.weak.keepBattle,
+                        detail: tr("nízké IV bývá pro Great League dobré", "low IV is often good for the Great League"))
+            }
+            .padding(.horizontal, 4)
+            Rectangle().fill(Theme.border).frame(height: 1)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(tr("Vlastní tag ze hry", "Your own tag from the game")).font(.system(size: 13, weight: .medium))
+                Text(tr("Shadow, lucky, Dynamax ani oblíbené kusy bot z obrazovky nepozná. Otaguj si je ve hře a vyber ten tag tady: IVory se jich pak nedotkne.",
+                        "The bot can't tell shadow, lucky, Dynamax or favorites from the screen. Tag them in the game, pick that tag here and IVory leaves them alone."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                FieldBox {
+                    TextField(tr("Bez tagu", "No tag"), text: $store.config.weak.keepTag)
+                }
+            }
+            .padding(.horizontal, 4)
+            Text(tr("Tag se jen přidává, nikdy neodebírá: ten samý tag dávají i duplicity a můžeš ho mít na kusech sám. IVory nikdy nic nepřenáší, přenesení je na tobě ve hře.",
+                    "The tag is only added, never taken off: the duplicates step uses the same tag and you may have set it by hand. IVory never transfers anything, that's up to you in the game."))
+                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 4)
+        }
+        .padding(12)
+    }
+
+    private func keepRow(_ title: String, _ on: Binding<Bool>, detail: String? = nil) -> some View {
+        Toggle(isOn: on) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 14, weight: .medium))
+                if let detail {
+                    Text(detail).font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+    }
+
+    private var battleSummary: String {
+        let b = store.config.battle
+        return tagCount((b.raid.enabled ? 1 : 0) + b.teams.filter(\.tag.enabled).count)
+    }
 
     private var deviceSummary: String {
         if let d = devices.first(where: { $0.udid == store.config.udid }) { return d.name }
@@ -262,6 +347,67 @@ struct SettingsContent: View {
                 .tint(Theme.accent)
         }
         .opacity(league.wrappedValue.enabled ? 1 : 0.55)
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: - Battle tags
+
+    private var battleTags: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ColorDotButton(color: $store.config.battle.raid.color)
+                VStack(alignment: .leading, spacing: 1) {
+                    TextField(tr("Název tagu", "Tag name"), text: $store.config.battle.raid.name)
+                        .textFieldStyle(.plain).font(.system(size: 14, weight: .medium))
+                    Text(tr("raid útočníci · \(store.config.battle.raid.perType) nejlepších na typ útoku",
+                            "raid attackers · the best \(store.config.battle.raid.perType) per attack type"))
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 4)
+                PlusMinus(value: $store.config.battle.raid.perType, range: 1...12)
+                Toggle("", isOn: $store.config.battle.raid.enabled)
+                    .toggleStyle(.switch).controlSize(.small).labelsHidden().tint(Theme.accent)
+            }
+            .opacity(store.config.battle.raid.enabled ? 1 : 0.55)
+            .padding(.horizontal, 4)
+            teamRow(.great, $store.config.battle.great)
+            teamRow(.ultra, $store.config.battle.ultra)
+            teamRow(.master, $store.config.battle.master)
+            Text(tr("Krok Battle tagy otaguje ve hře tvoje nejlepší útočníky na raidy a PvP týmy, které vybereš na obrazovce Battle. Ve hře je pak najdeš hledáním, třeba #\(store.config.battle.raid.name)&@steel pro útočníky s ocelovým útokem. Kusům, které už vybrané nejsou, tag sundá.",
+                    "The Battle tags step tags your best raid attackers and the PvP teams you pick on the Battle screen. In the game you then find them by searching, e.g. #\(store.config.battle.raid.name)&@steel for attackers with a steel move. It takes the tag off Pokémon that are no longer picked."))
+                .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+            Rectangle().fill(Theme.border).frame(height: 1)
+            Toggle(isOn: $store.config.battle.notifyBosses) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(tr("Upozornit na nové raid bosse", "Notify me about new raid bosses")).font(.system(size: 14, weight: .medium))
+                    Text(tr("Když přijde boss, na kterého máš silnou partu, nebo naopak žádné countery. Jen když je IVory otevřená.",
+                            "When a boss arrives that you have a strong party for, or no counters at all. Only while IVory is open."))
+                        .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch).controlSize(.small).tint(Theme.accent)
+            .padding(.horizontal, 4)
+            .onChange(of: store.config.battle.notifyBosses) { _, on in if on { BossAlerts.requestPermission() } }
+        }
+        .padding(12)
+    }
+
+    private func teamRow(_ league: PvPLeague, _ tag: Binding<BattleConfig.TeamTag>) -> some View {
+        HStack(spacing: 8) {
+            ColorDotButton(color: tag.color)
+            VStack(alignment: .leading, spacing: 1) {
+                TextField(tr("Název tagu", "Tag name"), text: tag.name)
+                    .textFieldStyle(.plain).font(.system(size: 14, weight: .medium))
+                Text(tr("\(league.name) · tým vybraný v Battle", "\(league.name) · the team picked in Battle"))
+                    .font(.system(size: 12)).foregroundStyle(Theme.muted)
+            }
+            Spacer(minLength: 4)
+            Toggle("", isOn: tag.enabled)
+                .toggleStyle(.switch).controlSize(.small).labelsHidden().tint(Theme.accent)
+        }
+        .opacity(tag.wrappedValue.enabled ? 1 : 0.55)
         .padding(.horizontal, 4)
     }
 

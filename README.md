@@ -87,7 +87,7 @@ The app asks you to confirm this on first launch.
   </picture>
 </p>
 
-IVory runs up to four steps. Combine them as you like; they always run in this order:
+IVory runs up to six steps. Combine them as you like; they always run in this order:
 
 | Step | What happens |
 |---|---|
@@ -95,6 +95,8 @@ IVory runs up to four steps. Combine them as you like; they always run in this o
 | 🏷️ **IV tags** | Goes through the whole storage and puts every Pokémon into an IV tag: `100% Perfect`, `95-99% Insane`, … `70-0% Garbage`. An IV tag that no longer fits is removed. |
 | 🏆 **PvP tags** | Pokémon with a good IV rank for a league get `Great League`, `Ultra League` or `Master League` (rank limits 100 / 100 / 50 by default). |
 | ✏️ **Rename** | Pokémon in an IV range (85–100 % by default) get a name built from your template, e.g. `91 Bax M30` = 91 % IV, final evolution Baxcalibur, rank 30 in Master League. Custom nicknames are left alone. |
+| ⚔️ **Battle tags** | Your best raid attackers (6 per attack type by default) get `Raid`, and the PvP team you pick on the Battle screen gets `GL Team`, `UL Team` or `ML Team`. In the game, `#Raid&@steel` then finds your steel attackers. The tag comes off Pokémon that are no longer picked. |
+| 🧹 **Weak Pokémon** | Everyone under an IV threshold (70 % by default) gets the same `Removable` tag, so you can transfer them in one go. Safeguards keep the rarer ones: legendary, mythical, Ultra Beasts, regional forms, the best of each species and anything with a PvP or Battle tag. The bot can't tell shadow, lucky or Dynamax apart, so for those you tag them in the game yourself and name that tag in the settings. The tag is only added, never taken off. |
 
 Tags that are missing in the game are created at the start, in the color you picked (the game offers 8 colors).
 
@@ -109,6 +111,19 @@ Tags that are missing in the game are created at the start, in the color you pic
 > [!IMPORTANT]
 > IVory **never transfers anything**. It only tags and renames. The transfer is up to you:
 > search `#Removable` in the game → select all → Transfer.
+
+### Battle
+
+The **Battle** screen in the app works from what the bot already knows about your storage:
+
+- **Raids:** the current raid bosses (from [ScrapedDuck](https://github.com/bigfoott/ScrapedDuck), refreshed once a day) with the six strongest Pokémon from your storage against each one, why each of them works (`Steel 1.6× vs Fairy`), the weather that boosts the boss, and an estimated win chance for 1–6 players.
+- **PvP teams:** all three leagues at a glance (who is in the team, what it still needs), then 3–4 different combinations for the chosen league, because no team beats everything. Pick one and it gets the league's tag in the game. For the picked team you see each member's role (lead, switch, closer), PvPoke score, IV rank, how its CP sits against the league's cap and what powering it up costs, plus a table of how every member does against the league's 10 most played Pokémon (win, close, loss) and which opponents nobody answers.
+
+- **Power-ups:** where stardust makes the most difference. A plan of 20 raid power-ups to level 40, best value first: each step is the one that makes your best six of an attack type gain the most per stardust, and it counts the earlier steps as done, so a second Kyurem is measured against the first one already at L40. At most two of the same species, so one species doesn't crowd out every other type. Below it the members of your tagged PvP teams that are still under the league's cap, cheapest first. Every row opens into the strength (or CP) it gains and the cost step by step, with the stardust, candy and XL candy from the game master.
+
+Under each raid party, Battle shows the in-game search that finds it among your `Raid`-tagged attackers (`#Raid&@poison,@steel`), with a Copy button. With IVory open, a new raid boss you have a strong party for (or no counters at all) gets a notification; turn it off in Settings → Battle tags.
+
+Both are estimates from public data, not battle simulations. The bot doesn't read moves, so IVory assumes each species' best moves (check them in the game); it doesn't count shadow or purified attackers, dodging, friendship bonuses or a shadow boss's enrage.
 
 ## How fast is it
 
@@ -175,7 +190,7 @@ Light and dark appearance follow macOS. The app is in English or Czech: it follo
 | 💻 **Mac** | macOS 14 Sonoma or later, Apple Silicon or Intel |
 | 🛠️ **Xcode** | Free from the [App Store](https://apps.apple.com/app/xcode/id497799835). Open it once after installing. Sign in with your Apple ID under Xcode → Settings → Accounts. |
 | 📱 **iPhone** | Connected by cable, unlocked and trusted, with **Developer Mode** on and **UI Automation** enabled (see [iPhone setup](#iphone-setup-one-time)) |
-| 🌐 **Internet** | Only for the first start, which downloads about 250 MB of tools |
+| 🌐 **Internet** | For the first start, which downloads about 250 MB of tools, once a week for the game data (about 22 MB), and once a day for the raid boss list (a few kB) |
 
 Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV and Apple Vision) **is downloaded by IVory itself** on the first start. You don't need Homebrew or Terminal.
 
@@ -301,7 +316,7 @@ Everything is saved automatically to `~/.pogo/config.json`.
 
 ```bash
 bash scripts/run.sh                                   # duplicates + IV tags
-bash scripts/run.sh --steps duplicates,iv,pvp,rename  # any combination of steps
+bash scripts/run.sh --steps duplicates,iv,pvp,rename,battle,weak  # any combination of steps
 bash scripts/run.sh --steps iv,pvp                    # only IV and PvP tags
 bash scripts/run.sh --fresh                           # measure IVs again (ignore the cache)
 ```
@@ -324,7 +339,8 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 - IVs are read pixel by pixel from the appraisal bars.
 - **Fast mode** (default) reads the storage only once, for all steps. In the appraisal it jumps to the next Pokémon with the ▶ arrow and keeps everything in memory; duplicates, IV tags, PvP tags and renaming are all decided from that one read.
 - **Batch tagging through search:** for each tag IVory types the CPs of the Pokémon that need it into the storage search (`cp2260,cp2268,cp1705`). The game then shows just those Pokémon on a screen or two, so IVory selects them all and tags them at once instead of scrolling through the whole storage. Renaming uses the same trick.
-- Species, level, CP after evolution and PvP ranks are computed from CP, HP and IVs using game data shipped in `core/pokedata.json` (PvPoke game master and CP multipliers). Nothing is downloaded while running.
+- Species, level, CP after evolution and PvP ranks are computed from CP, HP and IVs using public game data: species stats from the [PvPoke](https://github.com/pvpoke/pvpoke) game master and CP multipliers from [PokeMiners](https://github.com/PokeMiners/game_masters). IVory doesn't ship this data. It downloads it before the first run and refreshes it once a week, so new Pokémon work without an IVory update.
+- **Battle** adds the PvPoke league rankings and, from the PokeMiners game master, the raid stats of the moves, the type chart and the weather boosts (downloaded with the rest of the game data). Raid counters are ranked by DPS³ × TDO, the usual raid measure. The win chance compares the damage N players with such a party deal before the raid timer runs out with the boss's HP; the bosses' HP, CP multiplier and timer per tier aren't in the game master, so IVory uses the values the community measured.
 - The bot recognizes about 15 game screens, so it finds its way back to the storage from anywhere and recovers from popups, game crashes and dropped connections.
 - **Safety net:** before every tap it checks that `TRANSFER`, `EVOLVE`, `POWER UP` or `YES` is not nearby, and it always cancels confirmation dialogs (`CANCEL` / `NO`).
 
@@ -373,6 +389,8 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 | `pvp` | 3 leagues | `{"great": {"name": "Great League", "enabled": true, "max_rank": 100, "color": "blue"}, "ultra": …, "master": …}` |
 | `rename` | 85–100 % | `min`, `max`, `template` (pieces such as `{"k": "iv"}`, `{"k": "space"}`, `{"k": "text", "v": "TOP"}`), `overwrite_custom`, `skip_removable`, `only_tag` |
 | `fast_mode` | `true` | `false` = the old slow mode that opens every Pokémon separately |
+| `battle` | Raid + 3 team tags | `raid` (`enabled`, `name`, `color`, `per_type`), `great` / `ultra` / `master` (`enabled`, `name`, `color`, `team` = the PvPoke ids of the picked team), `notify_bosses`, and `tags`: the Pokémon picked for each tag by CP and IVs, written by the app when a run starts |
+| `weak` | under 70 %, all safeguards on | `max_iv`, `keep_legendary`, `keep_mythical`, `keep_ultra_beast`, `keep_regional`, `keep_best`, `keep_battle`, `keep_tag` (a tag of your own that protects a Pokémon) |
 | `consent_version`, `consent_at`, `app_version` | – | written when you confirm the risk notice (in the app or in Terminal). Revoke it in Settings → About. |
 
 </details>
@@ -390,9 +408,11 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 | `~/.pogo/last_box.json` | the storage from the last measurement (species, IVs, league ranks). The app uses it for the number of Pokémon in the rename range and for the name previews. |
 | `~/.pogo/cards/` | a picture of each Pokémon for the Stats screen: the whole phone screen with its appraisal (`883_14-13-14.jpg`, 540 px wide, about 60 kB, including the speech bubble that says where and when it was caught) and a square of the Pokémon (`…_icon.jpg`). Pictures of Pokémon that leave the memory get deleted. |
 | `~/.pogo/runs.json` | the run history for the Stats screen (start, duration, Pokémon checked, recovered errors). It survives deleting the run results. |
+| `~/.pogo/pokedata.json` | game data (species stats, evolutions, CP multipliers, and for Battle the moves, type chart, weather and league rankings) from PvPoke and PokeMiners, refreshed once a week |
+| `~/.pogo/raids.json` | the current raid bosses from ScrapedDuck for the Battle screen, refreshed once a day |
 | `~/.pogo/runtime` | Node.js, Appium and Python downloaded on the first start |
 | `~/.pogo/venv` | Python environment with the bot's libraries |
-| `~/Library/Caches/IVory` | a downloaded update until it's installed |
+| `~/Library/Caches/IVory` | a downloaded update until it's installed, and the raid bosses' pictures (`raids/`) |
 | `~/Desktop/pogo_runs/<date_time>/` | results of a run: `log.txt`, `result.json`, `result_iv_tagy.json`, `iv/` (crops of the IV bars) and `chyba_XX/` (screens from the moment something went wrong) |
 
 </details>
@@ -408,10 +428,10 @@ app/                 Mac app (SwiftUI), build script, icon
 app/dmg/             background and window layout of the installer DMG
 core/pogo_bot.py     the bot's entry point
 core/ivory/          the bot, split into modules (settings and the game's UI strings in config.py)
-core/pokecalc.py     CP and PvP math, with the game data in core/pokedata.json
+core/pokecalc.py     CP and PvP math
+core/pokedata.py     downloads the game data (PvPoke, PokeMiners) into ~/.pogo/pokedata.json
 scripts/run.sh       sets up the tools on the first start, starts Appium and the bot
 scripts/build_dmg.sh builds dist/IVory.dmg
-scripts/build_pokedata.py   refreshes the game data after new Pokémon are released
 scripts/build_runtime.sh    builds a self-contained Node/Appium/Python runtime into build/
 tests/               phone simulators and tests (see tests/README.md)
 docs/                images for this README

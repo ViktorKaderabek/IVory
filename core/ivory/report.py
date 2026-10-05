@@ -25,6 +25,8 @@ class Report:
         self.measured = 0
         self.pvp_tagged = 0
         self.renamed = 0
+        self.battle_tagged = 0
+        self.weak_tagged = 0
 
     def limit_reached(self, book):
         return bool(self.max) and book.groups_done() >= self.max
