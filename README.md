@@ -31,7 +31,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/download-dark.svg">
       <source media="(prefers-color-scheme: light)" srcset="docs/download-light.svg">
-      <img alt="Download IVory for Mac" src="docs/download-light.svg" width="420">
+      <img alt="Download IVory for Mac" src="docs/download-light.svg" width="456">
     </picture>
   </a>
 </p>
