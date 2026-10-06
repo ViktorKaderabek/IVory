@@ -122,8 +122,6 @@ struct HeroLights: NSViewRepresentable {
     }
 }
 
-// MARK: - Rings around the Start button
-
 /// When idle, one ring that slowly fades outward; during a run, two radar ripples and a spinning arc.
 struct StartRings: NSViewRepresentable {
     let running: Bool
@@ -240,8 +238,6 @@ struct StartRings: NSViewRepresentable {
     }
 }
 
-// MARK: - Pulsing
-
 /// A pulsing circle: optional fill, a glow around it (shadow) and blinking. Replaces `phaseAnimator`,
 /// which would redraw the window for the whole run.
 struct PulsingCircle: NSViewRepresentable {
@@ -317,8 +313,6 @@ struct PulsingCircle: NSViewRepresentable {
     }
 }
 
-// MARK: - Light on the phase connector
-
 /// A short bright stripe that sweeps from left to right over and over (on the connector after the running phase).
 struct FlowStripe: NSViewRepresentable {
     let reduceMotion: Bool
@@ -367,4 +361,30 @@ struct FlowStripe: NSViewRepresentable {
             stripe.add(move, forKey: "flow")
         }
     }
+}
+
+/// Calls `tick` once a second, but only while `active`. A `Timer.publish` held as a property runs from the
+/// moment the view exists, so an idle screen used to redraw once a second for nothing.
+extension View {
+    func ticking(every seconds: Double, while active: Bool, _ tick: @escaping (Date) -> Void) -> some View {
+        modifier(Ticking(seconds: seconds, active: active, tick: tick))
+    }
+}
+
+/// The curve the design animates everything with.
+extension Animation {
+    static func design(_ duration: Double, delay: Double = 0) -> Animation {
+        .timingCurve(0.2, 0.8, 0.2, 1, duration: duration).delay(delay)
+    }
+}
+
+extension View {
+    func entrance(_ delay: Double = 0, rise: CGFloat = 6, duration: Double = 0.4) -> some View {
+        modifier(Entrance(delay: delay, rise: rise, duration: duration))
+    }
+
+    func pops(_ delay: Double = 0) -> some View { modifier(Pop(delay: delay)) }
+
+    /// A light sweeping across a bar – the step that is running right now.
+    func shimmer(_ on: Bool) -> some View { modifier(Shimmer(on: on)) }
 }

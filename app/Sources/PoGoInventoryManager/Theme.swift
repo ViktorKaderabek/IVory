@@ -9,14 +9,22 @@ enum Theme {
     // MARK: Window (--w-* tokens from the design)
 
     static let bg = Color.adaptive(dark: .oklch(0.175, 0.026, 278), light: .oklch(0.946, 0.008, 280))
-    static let chrome = Color.adaptive(dark: .oklch(0.19, 0.027, 278), light: .oklch(0.928, 0.009, 280))
+    static let chrome = Color.adaptive(dark: .oklch(0.155, 0.024, 278), light: .oklch(0.928, 0.009, 280))
     static let surface = Color.adaptive(dark: .oklch(0.205, 0.028, 278), light: .oklch(0.975, 0.006, 280))
     static let raise = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.93, 0.009, 280))
-    /// Hover on `chrome` (the toolbar): in light mode `raise` is the same color as `chrome`, so it didn't show there.
-    static let chromeHover = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.885, 0.011, 280))
+    /// Hover over a card (`surface`). In light mode the step from `surface` has to be as small as the one in
+    /// dark mode, or the hover reads as a grey slab – but it still has to stay lighter than `bg`, or the card
+    /// looks like a hole in the page.
+    static let hover = Color.adaptive(dark: .oklch(0.235, 0.027, 280), light: .oklch(0.955, 0.010, 285))
+    /// The rail sits on `chrome`, which is darker than the content in both modes, so its own hover and
+    /// selection go the other way: towards white in light mode, away from it in dark.
+    static let railHover = Color.adaptive(dark: .oklch(0.195, 0.026, 280), light: .oklch(0.952, 0.009, 285))
+    static let railSelected = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.978, 0.006, 285))
+    /// The counter pill in a rail row; `raise` is the same color as `chrome` in light mode, so it vanished.
+    static let railBadge = Color.adaptive(dark: .oklch(0.24, 0.027, 280), light: .oklch(0.90, 0.011, 285))
     static let input = Color.adaptive(dark: .oklch(0.183, 0.027, 278), light: .oklch(0.96, 0.02, 290))
     static let text = Color.adaptive(dark: .oklch(0.96, 0.008, 280), light: .oklch(0.16, 0.025, 278))
-    static let muted = Color.adaptive(dark: .oklch(0.60, 0.02, 280), light: .oklch(0.38, 0.024, 280))
+    static let muted = Color.adaptive(dark: .oklch(0.67, 0.02, 280), light: .oklch(0.38, 0.024, 280))
     static let border = Color.adaptive(dark: NSColor.white.withAlphaComponent(0.09),
                                        light: NSColor.oklch(0.16, 0.025, 278).withAlphaComponent(0.13))
     static let track = Color.adaptive(dark: .oklch(0.29, 0.026, 280), light: .oklch(0.82, 0.014, 280))
@@ -60,6 +68,20 @@ enum Theme {
 
     /// Gradient for the active phase and progress: teal → blue → violet.
     static let progress = LinearGradient(colors: [lightTeal, lightBlue, violet], startPoint: .leading, endPoint: .trailing)
+
+    // MARK: Shadows
+    //
+    // A shadow that reads well on a dark window is far too heavy on a light one, so they are adaptive too.
+
+    /// Under a panel that floats over the window (the detail drawers, the stats window).
+    static let panelShadow = Color.adaptive(dark: NSColor.black.withAlphaComponent(0.5),
+                                            light: NSColor.black.withAlphaComponent(0.13))
+    /// Under a panel beside the content (the Pokémon detail on Storage).
+    static let cardShadow = Color.adaptive(dark: NSColor.black.withAlphaComponent(0.28),
+                                           light: NSColor.black.withAlphaComponent(0.09))
+    /// Under something small: a toast, a slider knob, a picture.
+    static let softShadow = Color.adaptive(dark: NSColor.black.withAlphaComponent(0.32),
+                                           light: NSColor.black.withAlphaComponent(0.12))
 }
 
 // MARK: - OKLCH
@@ -140,7 +162,7 @@ struct GhostButtonStyle: ButtonStyle {
                 .foregroundStyle(color)
                 .padding(.horizontal, 10)
                 .frame(height: height)
-                .background(hovering && isEnabled ? hover : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(hover.opacity(hovering && isEnabled ? 1 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
@@ -175,59 +197,12 @@ struct OutlineButtonStyle: ButtonStyle {
                 .foregroundStyle(color)
                 .padding(.horizontal, 12)
                 .frame(height: height)
-                .background(hovering && isEnabled ? hover : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(hover.opacity(hovering && isEnabled ? 1 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(stroke))
                 .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
                 .contentShape(Rectangle())
                 .onHover { hovering = $0 }
         }
-    }
-}
-
-/// Form field: height 32, background and border from the design.
-struct FieldBox<Content: View>: View {
-    var monospaced = false
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        content
-            .textFieldStyle(.plain)
-            .font(monospaced ? .system(size: 14, design: .monospaced) : .system(size: 14))
-            .foregroundStyle(Theme.text)
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.input, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.border))
-    }
-}
-
-/// Small up/down arrows (instead of the system Stepper).
-struct MiniStepper: View {
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    var step = 1
-
-    var body: some View {
-        VStack(spacing: 0) {
-            arrow("chevron.up") { value = min(range.upperBound, value + step) }
-            Rectangle().fill(Theme.border).frame(height: 1)
-            arrow("chevron.down") { value = max(range.lowerBound, value - step) }
-        }
-        .frame(width: 20)
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Theme.border))
-    }
-
-    private func arrow(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Theme.muted)
-                .frame(width: 20, height: 12)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .buttonRepeatBehavior(.enabled)
     }
 }
 

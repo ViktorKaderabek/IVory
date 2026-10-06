@@ -1,6 +1,5 @@
 """Measured Pokémon, the duplicate decisions and the memory kept between runs."""
 import json
-import os
 import time
 
 from . import config as cfg
@@ -33,16 +32,6 @@ def decide_group(group):
         if not r.types:
             r.action = "keep" if r.iv else None   # without a type, better keep it
     return True
-
-
-def card_key(cp, iv):
-    """Name of a Pokémon's pictures in the cards folder: CP and IVs ("883_14-13-14")."""
-    return f"{cp}_{'-'.join(map(str, iv))}"
-
-
-def cards_dir(memory_file=None):
-    """Pictures of the Pokémon for the Stats screen in the app: next to the memory (~/.pogo/cards)."""
-    return (memory_file or cfg.MEMORY_FILE).parent / "cards"
 
 
 # --- Pokémon records ---
@@ -138,28 +127,12 @@ class Memory:
         return self.data["box"]
 
     def set_box(self, items):
-        """New memory contents; IVs by signature (slow mode) are kept only for the Pokémon in it, and so are
-        their pictures."""
+        """New memory contents; IVs by signature (slow mode) are kept only for the Pokémon in it."""
         self.data["box"] = items
         self.data["iv"] = {f"{it['gcp']}|{alnum(it.get('gname') or '')}": {"iv": it["iv"], "types": it.get("types"),
                                                                            "t": it.get("t")}
                            for it in items if alnum(it.get("gname") or "")}
         self.save()
-        self.prune_cards({card_key(it.get("cp"), it["iv"]) for it in items if it.get("cp")})
-
-    def prune_cards(self, keep):
-        """Deletes the pictures of Pokémon that are no longer in the memory (transferred, or powered up:
-        a new CP gets a new picture)."""
-        try:
-            files = os.listdir(cards_dir(self.path))
-        except OSError:
-            return
-        for f in files:
-            if f.endswith(".jpg") and f[:-4].removesuffix("_icon") not in keep:
-                try:
-                    os.remove(cards_dir(self.path) / f)
-                except OSError:
-                    pass
 
     def is_tagged(self, cp, name):
         prefix = alnum(cfg.TAG_NAME) + "|"

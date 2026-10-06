@@ -2,85 +2,28 @@
 import io
 import json
 import re
-import socket
 import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from PIL import Image
 import cv2
 import numpy as np
-from PIL import Image
 
 from . import config as cfg
 from .errors import Danger, StepError
 from .output import log, short_err, T
-from .calibration import cal_load
 from .vision import find_text, Frame, img_diff, upper_text
-from .screens import filter_key, multiselect_look, transfer_dialog
+from .calibration import cal_load
+from .pixels import multiselect_look
+from .read_box import filter_key
+from .read_dialog import transfer_dialog
+from .stream import Stream
 
 
 SAVER = ThreadPoolExecutor(max_workers=2)   # saving images doesn't block tapping
-
-
-# --- Phone screen ---
-class Stream:
-    """Reads the WebDriverAgent MJPEG stream and keeps the latest frame."""
-
-    def __init__(self, port):
-        self.port = port
-        self.lock = threading.Lock()
-        self.jpeg, self.t, self.n = None, 0.0, 0
-        self.stop_ev = threading.Event()
-        if cfg.USE_STREAM:
-            threading.Thread(target=self._run, daemon=True).start()
-
-    def latest(self):
-        with self.lock:
-            return self.jpeg, self.t, self.n
-
-    def fresh(self, age=0.6):
-        return self.jpeg is not None and time.time() - self.t < age
-
-    def _run(self):
-        while not self.stop_ev.is_set():
-            try:
-                with socket.create_connection(("127.0.0.1", self.port), timeout=3) as s:
-                    s.settimeout(5)
-                    s.sendall(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
-                    buf = bytearray()
-                    while not self.stop_ev.is_set():
-                        chunk = s.recv(1 << 18)
-                        if not chunk:
-                            break
-                        buf += chunk
-                        self._frames(buf)
-            except OSError:
-                pass
-            self.stop_ev.wait(1.0)
-
-    def _frames(self, buf):
-        while True:
-            i = buf.find(b"\xff\xd8")
-            if i < 0:
-                if len(buf) > 1 << 16:
-                    del buf[:-1024]
-                return
-            m = re.search(rb"Content-Length:\s*(\d+)", bytes(buf[max(0, i - 256):i]), re.I)
-            if m:
-                end = i + int(m.group(1))
-                if len(buf) < end:
-                    return
-            else:
-                j = buf.find(b"\xff\xd9", i + 2)
-                if j < 0:
-                    return
-                end = j + 2
-            frame = bytes(buf[i:end])
-            del buf[:end]
-            with self.lock:
-                self.jpeg, self.t, self.n = frame, time.time(), self.n + 1
 
 
 # --- Phone control ---
@@ -179,7 +122,7 @@ class Bot:
                         return fr
                 if now > end:
                     break
-                time.sleep(0.01)
+                time.sleep(0.004)      # a frame arrives every 1/MJPEG_FPS s – don't sleep through it
             self.stream_misses += 1
             if self.stream_misses == 3:
                 log(T("   (video stream neposílá snímky, přepínám na screenshoty)",
@@ -301,14 +244,27 @@ class Bot:
 
     # --- Waiting for the result ---
     def wait_for(self, cond, timeout, after=None, label="kontrola"):
-        """Reads new frames until cond(frame) returns something truthy (or time runs out)."""
+        """Reads new frames until cond(frame) returns something truthy (or time runs out).
+
+        Every frame is checked with the fast OCR, which is five times cheaper, so a screen that has
+        changed is noticed within a frame instead of a tenth of a second. The answer is always the
+        accurate OCR's: a "yes" from the fast read is confirmed on the same frame, and whatever the
+        fast read says, the frame is read properly at least every CHECK_FULL s and when the time runs
+        out – so text the fast OCR can't read (single keys on the keyboard, a long CP search) delays
+        the answer by a fraction of a second at most, and never changes it."""
         end = time.time() + timeout
+        full = 0.0                 # when the frame was last read with the accurate OCR
         while True:
             fr = self.frame(after=after)
-            res = cond(fr)
-            if res or time.time() > end:
-                self.remember("check", label, fr)
-                return res, fr
+            late = time.time() > end
+            # the order matters: a frame that is going to be read accurately anyway (the first one, or
+            # one that is due) must not pay for the fast read as well
+            if fr.t - full >= cfg.CHECK_FULL or late or cond(fr.rough()):
+                full = fr.t
+                res = cond(fr)
+                if res or late:
+                    self.remember("check", label, fr)
+                    return res, fr
             after = fr.t + 0.005
 
     def act(self, pt, label, cond, timeout=2.0, fr=None, tries=2, alts=(), overlay=False):

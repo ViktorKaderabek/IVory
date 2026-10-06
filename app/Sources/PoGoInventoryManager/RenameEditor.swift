@@ -2,13 +2,14 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Name template editor (a sheet over the window). Pieces are added by clicking and reordered by dragging;
+/// Name template editor (a window over the screen). Pieces are added by clicking and reordered by dragging;
 /// custom text is typed straight into the piece. The preview shows 4 Pokémon, and the counter shows the length
 /// of the longest of their names.
 struct RenameEditor: View {
     @Binding var config: RenameConfig
     let samples: [NameSample]
-    @Environment(\.dismiss) private var dismiss
+    /// Closing is the host's job – there is no sheet to dismiss.
+    var close: () -> Void = {}
     @State private var tokens: [NameToken] = []
     @State private var dragging: UUID?
     @State private var bodyHeight: CGFloat = 560
@@ -17,9 +18,10 @@ struct RenameEditor: View {
     @State private var parentHeight: CGFloat?
     @State private var sheetHeight: CGFloat = 720
 
-    init(config: Binding<RenameConfig>, samples: [NameSample]) {
+    init(config: Binding<RenameConfig>, samples: [NameSample], close: @escaping () -> Void = {}) {
         _config = config
         self.samples = samples
+        self.close = close
         _tokens = State(initialValue: config.wrappedValue.template)
     }
 
@@ -39,7 +41,7 @@ struct RenameEditor: View {
             ScrollView {
                 editorBody
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 2)
+                    .padding(.vertical, 18)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { bodyHeight = $0 }
             }
             .scrollBounceBehavior(.basedOnSize)
@@ -53,6 +55,8 @@ struct RenameEditor: View {
         .frame(width: 640)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { sheetHeight = $0 }
         .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.border, lineWidth: 1) }
         .background(ParentHeightReader(height: $parentHeight))
         .foregroundStyle(Theme.text)
         .animation(.snappy, value: overCount)
@@ -118,12 +122,12 @@ struct RenameEditor: View {
             Button(tr("Výchozí", "Default")) { withAnimation(.snappy) { tokens = RenameConfig.defaultTemplate } }
                 .buttonStyle(GhostButtonStyle())
             Spacer()
-            Button(tr("Zrušit", "Cancel")) { dismiss() }
+            Button(tr("Zrušit", "Cancel")) { close() }
                 .buttonStyle(OutlineButtonStyle(color: Theme.text, stroke: Theme.border, hover: Theme.raise))
                 .keyboardShortcut(.cancelAction)
             Button(tr("Hotovo", "Done")) {
                 config.template = tokens
-                dismiss()
+                close()
             }
             .buttonStyle(FilledButtonStyle())
             .keyboardShortcut(.defaultAction)
@@ -257,96 +261,6 @@ struct RenameEditor: View {
             }
             .background(Theme.bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border))
-        }
-    }
-}
-
-/// Finds the height of the window the sheet hangs over and keeps tracking it when the window is resized.
-private struct ParentHeightReader: NSViewRepresentable {
-    @Binding var height: CGFloat?
-
-    func makeNSView(context: Context) -> NSView {
-        let view = ReaderView()
-        view.report = { h in DispatchQueue.main.async { if height != h { height = h } } }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    private final class ReaderView: NSView {
-        var report: ((CGFloat) -> Void)?
-        private var observer: NSObjectProtocol?
-
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            observer = nil
-            guard window != nil else { return }
-            // at this point the sheet may not be attached to the window yet (sheetParent is nil)
-            DispatchQueue.main.async { [weak self] in self?.attach() }
-        }
-
-        private func attach() {
-            guard let sheet = window,
-                  let parent = sheet.sheetParent ?? NSApp.windows.first(where: { $0.attachedSheet === sheet })
-                    ?? NSApp.mainWindow.flatMap({ $0 === sheet ? nil : $0 }) else { return }
-            report?(parent.contentLayoutRect.height)
-            observer = NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: parent,
-                                                              queue: .main) { [weak self, weak parent] _ in
-                if let parent { self?.report?(parent.contentLayoutRect.height) }
-            }
-        }
-
-        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-    }
-}
-
-/// Filled button in the accent color (Done).
-struct FilledButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.onAccent)
-            .padding(.horizontal, 16)
-            .frame(height: 32)
-            .background(Theme.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .opacity(configuration.isPressed ? 0.8 : 1)
-    }
-}
-
-/// A row that wraps (template pieces, the piece menu).
-struct FlowRow: Layout {
-    var spacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 600
-        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, maxX: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > 0 && x + size.width > width {
-                x = 0
-                y += rowH + spacing
-                rowH = 0
-            }
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            rowH = max(rowH, size.height)
-        }
-        return CGSize(width: proposal.width ?? maxX, height: y + rowH)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
-        for s in subviews {
-            let size = s.sizeThatFits(.unspecified)
-            if x > bounds.minX && x + size.width > bounds.maxX {
-                x = bounds.minX
-                y += rowH + spacing
-                rowH = 0
-            }
-            s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            rowH = max(rowH, size.height)
         }
     }
 }

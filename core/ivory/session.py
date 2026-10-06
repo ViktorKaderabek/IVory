@@ -5,7 +5,9 @@ import time
 from . import config as cfg
 from .errors import Fatal, NotAuthorized, StepError
 from .output import emit, log, short_err, step, T
-from .screens import BOX_STATES, classify, safe_button
+from .read_box import safe_button
+from .read_box import BOX_STATES
+from .screens import classify
 
 
 def _run(cmd):
@@ -46,6 +48,13 @@ def detect_team_id():
     return m.group(1) if m else ""
 
 
+def not_authorized(e):
+    """Did the iPhone refuse to be driven? ("Not authorized for performing UI testing actions",
+    XCTDaemonErrorDomain code 41)."""
+    low = str(e).lower()
+    return "not authorized" in low or "xctdaemonerrordomain code=41" in low
+
+
 def connect(udid, fresh_wda=False):
     from appium import webdriver
     from appium.options.ios import XCUITestOptions
@@ -68,7 +77,16 @@ def connect(udid, fresh_wda=False):
     o.set_capability("wdaLaunchTimeout", 240000)   # the first WebDriverAgent build can take a few minutes
     if fresh_wda:
         o.set_capability("useNewWDA", True)        # delete the old WebDriverAgent from the iPhone and start a new one
-    driver = webdriver.Remote(cfg.APPIUM_URL, options=o)
+    try:
+        driver = webdriver.Remote(cfg.APPIUM_URL, options=o)
+    except Exception as e:
+        # The iPhone usually refuses control while the session is being made, not after – that is
+        # where a WebDriverAgent left hanging from the last run shows up. It used to be noticed only
+        # on the check further down, so the caller never got as far as starting WebDriverAgent fresh
+        # and the run stopped on the raw error instead.
+        if not_authorized(e):
+            raise NotAuthorized(short_err(e))
+        raise
     settings = {"waitForIdleTimeout": 0, "animationCoolOffTimeout": 0,
                 "mjpegServerScreenshotQuality": cfg.MJPEG_QUALITY, "mjpegServerFramerate": cfg.MJPEG_FPS,
                 "mjpegScalingFactor": cfg.MJPEG_SCALE}
@@ -80,7 +98,7 @@ def connect(udid, fresh_wda=False):
     try:
         driver.get_window_size()       # is the bot really allowed to control the iPhone?
     except Exception as e:
-        if "not authorized" in str(e).lower():
+        if not_authorized(e):
             try:
                 driver.quit()
             except Exception:
@@ -130,6 +148,12 @@ def explain_connect_error(e):
     if "unknown device" in low or ("udid" in low and "not" in low) or "could not find a device" in low:
         return T("iPhone se nenašel. Připoj ho kabelem, odemkni, potvrď „Důvěřovat“ a zkontroluj iPhone v nastavení aplikace.",
                  "iPhone not found. Connect it with a cable, unlock it, tap “Trust” and check the iPhone in the app settings.")
+    if not_authorized(e):
+        return T("iPhone nepovolil ovládání. Odemkni ho a zapni na něm Nastavení → Vývojář → „Enable UI Automation“. "
+                 "Když tam ta volba není, připoj iPhone k Macu, otevři Xcode a chvíli počkej, než se zařízení připraví.",
+                 "The iPhone refused control. Unlock it and turn on Settings → Developer → “Enable UI Automation”. "
+                 "If there is no such switch, connect the iPhone to the Mac, open Xcode and wait for it to finish "
+                 "preparing the device.")
     if "locked" in low or "passcode" in low:
         return T("iPhone je zamčený. Odemkni ho a spusť znovu.", "The iPhone is locked. Unlock it and run again.")
     return T(f"Nepodařilo se připojit k iPhonu: {short_err(e)}", f"Couldn't connect to the iPhone: {short_err(e)}")

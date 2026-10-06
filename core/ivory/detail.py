@@ -1,5 +1,4 @@
 """The Pokémon detail screen: opening it and measuring IVs in the appraisal."""
-import os
 import time
 
 import cv2
@@ -8,10 +7,11 @@ from . import config as cfg
 from .errors import StepError
 from .output import T
 from .vision import alnum, crop_norm, find_text
-from .screens import bar_labels, classify, detail_cp, detail_name, detail_types, dialog_text, nickname_dialog
+from .read_detail import bar_labels, detail_cp, detail_name, detail_types, dialog_text
+from .read_dialog import nickname_dialog
+from .screens import classify
 from .bars import read_bars
 from .device import SAVER
-from .records import card_key, cards_dir
 
 
 def check_detail(bot, fr, cell):
@@ -49,40 +49,12 @@ def save_bars(bot, fr, labels, bars, vals, cp):
     SAVER.submit(cv2.imwrite, str(path), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
 
 
-CARD_W = 540      # width of the whole screen with the appraisal; the small square of the Pokémon is ICON_W
-ICON_W = 256
-
-
-def save_card(fr, rec):
-    """For the Stats screen in the app: the whole screen with the Pokémon and its appraisal (the frame the IVs
-    were read from, so it costs no extra time), and a square of the Pokémon itself for the lists.
-    In ~/.pogo/cards; the memory deletes them once the Pokémon leaves it (Memory.prune_cards)."""
-    if fr is None or not rec.get("iv") or not rec.get("cp"):
-        return
-    img = fr.img
-    h, w = img.shape[:2]
-    icon = crop_norm(img, 0.22, 0.09, 0.78, 0.09 + 0.56 * w / h)
-    base = cards_dir() / card_key(rec["cp"], rec["iv"])
-
-    def write(pic, width, path):
-        pic = cv2.resize(pic, (width, round(width * pic.shape[0] / pic.shape[1])), interpolation=cv2.INTER_AREA)
-        tmp = path.with_name(path.stem + ".tmp.jpg")       # the app may be reading the folder right now
-        if cv2.imwrite(str(tmp), cv2.cvtColor(pic, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 75]):
-            os.replace(tmp, path)
-
-    def work():
-        try:
-            base.parent.mkdir(parents=True, exist_ok=True)
-            write(img, CARD_W, base.with_name(base.name + ".jpg"))
-            write(icon, ICON_W, base.with_name(base.name + "_icon.jpg"))
-        except Exception:
-            pass                                           # a picture isn't worth stopping the run for
-    SAVER.submit(work)
-
-
 def read_appraisal(bot, cp, prev=None, quick=None):
     """Taps through the intro speech and reads the bars once their animation has finished. None = failed.
-    Finds the bar labels with the fast OCR (same IVs as the accurate OCR on real screenshots, 5× faster).
+    The Attack/Defense/HP labels are found with the fast OCR (same IVs as the accurate OCR on real
+    screenshots, 5× faster) and then reused: while the appraisal stays open they don't move, so each
+    new frame's bars are read straight from the pixels and only a frame that doesn't fit them is read
+    by OCR again. Before the values are accepted, OCR confirms the labels are still really there.
     The values must hold still for BAR_STABLE s; while they equal prev, the previous Pokémon's values
     (after moving on with the ▶ arrow the bars may still be redrawing), it waits at least BAR_SETTLE.
     quick(frame, IV) returns the read Pokémon when the IVs from the bars exactly fit its CP and HP; then
@@ -95,14 +67,19 @@ def read_appraisal(bot, cp, prev=None, quick=None):
     after = None
     bot.bars_frame = bot.bars_rec = None
     tried = None
+    labels = None
     while time.time() < end:
         fr = bot.frame(after=after)
         after = fr.t + 0.005
-        labels = bar_labels(fr.fast)
+        # The labels stay in the same place for as long as the appraisal is open, so the bars of each
+        # new frame are read straight from the pixels (1.6 ms); OCR (21 ms) runs only when that fails.
+        vals, bars = read_bars(fr.img, labels) if labels else (None, None)
+        if vals is None:
+            labels = bar_labels(fr.fast)
+            vals, bars = read_bars(fr.img, labels) if labels else (None, None)
         if labels:
             if first is None:
                 first = fr.t
-            vals, bars = read_bars(fr.img, labels)
             if vals != cur:
                 cur, cur_since = vals, fr.t
                 continue
@@ -113,6 +90,9 @@ def read_appraisal(bot, cp, prev=None, quick=None):
                 tried = vals
                 bot.bars_rec = quick(fr, vals)
             if bot.bars_rec is not None or (fr.t - cur_since >= cfg.BAR_STABLE and (fr.t - first >= cfg.BAR_SETTLE or new)):
+                if bar_labels(fr.fast) is None:
+                    labels = None        # the appraisal closed: the values came from stale label positions
+                    continue
                 bot.remember("bary", f"CP{cp}", fr)
                 save_bars(bot, fr, labels, bars, vals, cp)
                 bot.bars_frame = fr

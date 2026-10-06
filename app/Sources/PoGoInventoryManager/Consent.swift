@@ -11,6 +11,7 @@ enum Consent {
     struct Risk: Identifiable {
         let symbol: String
         let color: Color
+        let tint: Color
         let title: String
         let text: String
         var id: String { symbol }
@@ -18,18 +19,18 @@ enum Consent {
 
     static var risks: [Risk] {
         [
-            Risk(symbol: "nosign", color: Theme.red,
+            Risk(symbol: "exclamationmark.octagon.fill", color: Theme.red, tint: Theme.redTint,
                  title: tr("Můžeš přijít o účet", "You can lose your account"),
                  text: tr("Niantic může účet dočasně nebo natrvalo zablokovat. Přijdeš tím o všechny Pokémony i předměty.",
                           "Niantic can suspend or permanently ban your account. You'd lose all your Pokémon and items.")),
-            Risk(symbol: "scroll.fill", color: Theme.orange,
+            Risk(symbol: "nosign", color: Theme.orange, tint: Theme.orangeTint,
                  title: tr("Porušuješ podmínky hry", "You break the game's terms"),
                  text: tr("Automatizace je v podmínkách použití Pokémon GO zakázaná.",
                           "Automation is forbidden by the Pokémon GO Terms of Service.")),
-            Risk(symbol: "checkmark.shield.fill", color: Theme.muted,
+            Risk(symbol: "checkmark.shield.fill", color: Theme.green, tint: Theme.greenTint,
                  title: tr("Bot nic nepřevádí", "The bot never transfers anything"),
                  text: tr("Jen taguje a přejmenovává a potvrzovací dialogy vždy zruší. I tak se může splést, tak si tagy před převodem zkontroluj.",
-                          "It only tags and renames, and it always cancels confirmation dialogs. It can still make mistakes, so check the tags before you transfer.")),
+                          "It only tags and renames, and it always cancels confirmation dialogs. It can still get things wrong, so check the tags before you transfer.")),
         ]
     }
 
@@ -88,7 +89,7 @@ struct ConsentRiskList: View {
                         .frame(width: 20)
                         .padding(.top, 1)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(r.title).font(.system(size: 14, weight: .semibold))
+                        Text(r.title).font(.system(size: 14, weight: .medium))
                         Text(r.text).font(.system(size: 13)).foregroundStyle(Theme.muted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -105,7 +106,9 @@ struct ConsentRiskList: View {
     }
 }
 
-/// The consent window over the whole app (below the toolbar). It can't be closed with the × button or Esc.
+/// The first start: the notice fills the whole window instead of sitting in a dialog. The left half is
+/// the app, the right half what has to be agreed to. Nothing else in the window works until all three
+/// boxes are ticked.
 struct ConsentOverlay: View {
     @EnvironmentObject private var store: ConfigStore
     let onAccept: () -> Void
@@ -115,94 +118,138 @@ struct ConsentOverlay: View {
     private var all: Bool { count == checked.count }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Theme.bg.opacity(0.55)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture {}            // clicking outside the window does nothing
-            ScrollView {
-                dialog
-                    .padding(.top, 56)
-                    .padding(.bottom, 32)
-                    .frame(maxWidth: .infinity)
+        WeightedColumns(weights: [0.85, 1], spacing: 0, fillHeight: true) {
+            cover
+            form
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.bg)
+        .ignoresSafeArea()
+        .foregroundStyle(Theme.text)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+    }
+
+    // MARK: - Left half
+
+    private var cover: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Spacer(minLength: 0)
+            AppIconView()
+                .frame(width: 88, height: 88)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .shadow(color: .black.opacity(0.4), radius: 25, y: 20)
+                .pops(0.1)
+            Text(tr("Než spustíš IVory", "Before you start IVory"))
+                .font(.system(size: 40, weight: .medium))
+                .tracking(-1.2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text(tr("IVory ovládá Pokémon GO za tebe. Hra to nepovoluje.",
+                    "IVory controls Pokémon GO for you. The game doesn't allow it."))
+                .font(.system(size: 16))
+                .foregroundStyle(Color.oklch(0.82, 0.02, 280))
+                .frame(maxWidth: 360, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Text(tr("Celé znění je v README a v Nastavení › O aplikaci.",
+                    "The full text is in the README and in Settings › About."))
+                .font(.system(size: 12))
+                .foregroundStyle(Color.oklch(0.68, 0.02, 280))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 40)
+        .padding(.top, 70)                   // under the traffic lights
+        .padding(.bottom, 40)
+        .background { glow }
+        .foregroundStyle(Theme.white)
+        .clipped()
+    }
+
+    private var glow: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                RadialGradient(colors: [.oklch(0.31, 0.08, 282), .oklch(0.16, 0.025, 278)],
+                               center: .topLeading, startRadius: 0,
+                               endRadius: max(geo.size.width * 1.1, geo.size.height * 0.8) * 0.7)
+                Circle().fill(Theme.violet).blur(radius: 60).opacity(0.35)
+                    .frame(width: 420, height: 420)
+                    .offset(x: geo.size.width - 260, y: geo.size.height - 280)
+                Circle().fill(Theme.lightTeal).blur(radius: 60).opacity(0.2)
+                    .frame(width: 320, height: 320)
+                    .offset(x: -80, y: geo.size.height * 0.8 - 320)
             }
-            .scrollBounceBehavior(.basedOnSize)
         }
     }
 
-    private var dialog: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    // MARK: - Right half
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 14) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 21))
-                    .foregroundStyle(Theme.red)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.redTint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(tr("Než spustíš IVory", "Before you start IVory"))
-                        .font(.system(size: 24, weight: .medium))
-                        .tracking(-0.4)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(tr("IVory ovládá Pokémon GO za tebe. Hra to nepovoluje.",
-                            "IVory plays Pokémon GO for you. The game doesn't allow that."))
-                        .font(.system(size: 15))
-                        .foregroundStyle(Theme.muted)
+                ForEach(Array(Consent.risks.enumerated()), id: \.element.id) { i, risk in
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(systemName: risk.symbol)
+                            .font(.system(size: 17))
+                            .foregroundStyle(risk.color)
+                            .frame(width: 34, height: 34)
+                            .background(risk.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(risk.title).font(.system(size: 14, weight: .medium))
+                            Text(risk.text)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .entrance(0.1 + 0.12 * Double(i), rise: 8, duration: 0.45)
                 }
             }
-            .padding(EdgeInsets(top: 26, leading: 28, bottom: 6, trailing: 28))
 
-            ConsentRiskList()
-                .padding(.horizontal, 20)
-                .padding(.top, 14)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(tr("Potvrď prosím", "Please confirm"))
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(EdgeInsets(top: 0, leading: 8, bottom: 6, trailing: 8))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(tr("Potvrď prosím", "Please confirm"))
+                        .font(.system(size: 14, weight: .medium))
+                    Spacer(minLength: 8)
+                    Text(all ? tr("Vše potvrzeno", "All confirmed")
+                             : tr("Potvrzeno \(count) ze 3", "Confirmed \(count) of 3"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(all ? Theme.green : Theme.muted)
+                        .contentTransition(.numericText())
+                }
                 ForEach(Array(Consent.checks.enumerated()), id: \.offset) { i, label in
                     CheckRow(label: label, isOn: $checked[i])
                 }
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 4, trailing: 20))
+            .padding(.top, 20)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
 
-            Rectangle().fill(Theme.border).frame(height: 1).padding(.top, 14)
             HStack(spacing: 8) {
-                Text(all ? tr("Vše potvrzeno", "All confirmed")
-                         : tr("Potvrzeno \(count) ze 3", "Confirmed \(count) of 3"))
-                    .font(.system(size: 12))
+                Text(tr("Souhlas uložím s datem a verzí aplikace. Když se podmínky změní, zeptám se znovu.",
+                        "I save the consent with the date and app version. If the terms change, I'll ask again."))
+                    .font(.system(size: 11))
                     .foregroundStyle(Theme.muted)
-                    .contentTransition(.numericText())
-                Spacer()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Button(tr("Ukončit", "Quit")) { NSApp.terminate(nil) }
-                    .buttonStyle(OutlineButtonStyle(color: Theme.text, stroke: Theme.border, hover: Theme.raise, height: 34))
+                    .buttonStyle(GhostButtonStyle(color: Theme.text, hover: Theme.hover, height: 34))
                 Button(tr("Rozumím a pokračuji", "I understand, continue")) {
                     Consent.accept(store)
                     onAccept()
                 }
                 .buttonStyle(OutlineButtonStyle(height: 34))
-                .fontWeight(.semibold)
                 .disabled(!all)
                 .keyboardShortcut(.defaultAction)
                 .animation(.easeOut(duration: 0.2), value: all)
             }
-            .padding(EdgeInsets(top: 14, leading: 28, bottom: 14, trailing: 20))
-
-            Text(tr("Souhlas uložím s datem a verzí aplikace. Když se podmínky změní, zeptám se znovu. Celé znění je v README a v Nastavení → O aplikaci.",
-                    "Your consent is saved with the date and the app version. If the terms change, you'll be asked again. The full text is in the README and in Settings → About."))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(EdgeInsets(top: 0, leading: 28, bottom: 18, trailing: 28))
+            .padding(.top, 20)
+            .overlay(alignment: .top) { Rectangle().fill(Theme.border).frame(height: 1) }
         }
-        .font(.system(size: 14))
-        .foregroundStyle(Theme.text)
-        .frame(width: 580)
-        .background(Theme.chrome, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.border))
-        .shadow(color: .black.opacity(0.35), radius: 40, y: 24)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
+        .padding(.horizontal, 56)
+        .padding(.vertical, 40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     /// A checkbox spanning the whole row (click or Space).
@@ -215,31 +262,37 @@ struct ConsentOverlay: View {
             Button { withAnimation(.easeOut(duration: 0.15)) { isOn.toggle() } } label: {
                 HStack(alignment: .top, spacing: 12) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(isOn ? Theme.accent : .clear)
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .strokeBorder(Theme.muted, lineWidth: isOn ? 0 : 1.5)
                         if isOn {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(Theme.onAccent)
                         }
                     }
-                    .frame(width: 20, height: 20)
+                    .frame(width: 17, height: 17)
                     .padding(.top, 1)
                     Text(label)
-                        .font(.system(size: 14))
+                        .font(.system(size: 13))
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 9)
-                .background(hovering ? Theme.raise : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(isOn ? Theme.tint : (hovering ? Theme.hover : Theme.surface),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(isOn ? Theme.accent : Theme.border, lineWidth: 1)
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
             .accessibilityLabel(label)
             .accessibilityAddTraits(isOn ? [.isSelected] : [])
             .accessibilityValue(isOn ? tr("zaškrtnuto", "checked") : tr("nezaškrtnuto", "unchecked"))

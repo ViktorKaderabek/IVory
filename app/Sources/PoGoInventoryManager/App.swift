@@ -10,10 +10,6 @@ enum Entry {
             exit(code)
         }
         #if DEBUG
-        if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
-            let code = MainActor.assumeIsolated { SnapshotExport.run(to: args[i + 1]) }
-            exit(code)
-        }
         if args.contains("--battle-dump") {
             MainActor.assumeIsolated { BattleStore.shared.dump() }
             exit(0)

@@ -13,7 +13,6 @@ final class StatsStore: ObservableObject {
         loading = true
         Task {
             let loaded = await Task.detached(priority: .utility) { InventoryStats.load(removeTag: removeTag) }.value
-            MonImages.reset(for: loaded)
             stats = loaded
             loading = false
         }
@@ -105,6 +104,11 @@ struct InventoryStats {
     var nearPerfect = 0          // 98% or more
 
     var ranked = 0               // entries with at least one league rank
+    /// Where each Pokémon stands among your own, per league: league -> Pokémon id -> place (1 = your
+    /// best). `Mon.ranks` says how good its IVs are of all 4,096 the species can have; this says how
+    /// good it is of what you actually own. They are different questions: your best Great League
+    /// Pokémon can still be a long way from the best possible spread.
+    var ownPlace: [String: [Int: Int]] = [:]
     var topCP: Mon?
 
     var legendary = 0
@@ -196,6 +200,19 @@ struct InventoryStats {
 
         // PvP, strength
         s.ranked = mons.filter { !$0.ranks.isEmpty }.count
+        for league in PvPLeague.allCases {
+            let ranked = mons.compactMap { m in m.ranks[league.rawValue].map { (m.id, $0) } }
+            // Plenty of Pokémon share the same IV rank – every one with the league's perfect spread is
+            // #1 of 4,096 – so they share the place here too. Putting them in some order by their id
+            // would invent a difference that isn't there.
+            let sortedRanks = ranked.map(\.1).sorted()
+            var place: [Int: Int] = [:]
+            for (id, r) in ranked {
+                let better = sortedRanks.firstIndex(where: { $0 >= r }) ?? 0
+                place[id] = better + 1
+            }
+            s.ownPlace[league.rawValue] = place
+        }
         s.topCP = mons.max { $0.cp < $1.cp }
 
         // types, levels, tags
@@ -219,6 +236,9 @@ struct InventoryStats {
     }
 
     /// Counts by name, the largest first (equal counts alphabetically).
+    /// Your own place in a league, 1 = your best. nil when this one has no rank for it.
+    func place(of m: Mon, in league: String) -> Int? { ownPlace[league]?[m.id] }
+
     private static func ranked(_ counts: [String: Int]) -> [Named] {
         counts.map { Named(name: $0.key, count: $0.value) }.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
     }
@@ -357,57 +377,5 @@ struct InventoryStats {
             let values: [String: String]?
         }
         let items: [Item]
-    }
-}
-
-/// The run history in ~/.pogo/runs.json. The runs found in the pogo_runs folders are added to it on every load,
-/// so deleting the results in the settings (or by hand) doesn't erase the history in Stats.
-enum RunHistory {
-    static var file: URL { FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pogo/runs.json") }
-
-    /// The saved history with these runs added (a run still in its folder replaces the saved one); saved again
-    /// when something was added. Oldest first.
-    static func merge(_ runs: [InventoryStats.Run]) -> [InventoryStats.Run] {
-        var byId: [String: InventoryStats.Run] = [:]
-        if let data = try? Data(contentsOf: file),
-           let saved = try? JSONDecoder().decode([InventoryStats.Run].self, from: data) {
-            for r in saved { byId[r.id] = r }
-        }
-        let before = byId.count
-        var changed = false
-        for r in runs {
-            if let old = byId[r.id], old.duration == r.duration, old.checked == r.checked, old.errors == r.errors { continue }
-            byId[r.id] = r
-            changed = true
-        }
-        let all = byId.values.sorted { $0.date < $1.date }
-        if changed || byId.count != before, let data = try? JSONEncoder().encode(all) {
-            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: file, options: .atomic)
-        }
-        return all
-    }
-
-    /// Without any history (the results were deleted before it was kept): runs guessed from when the bot first
-    /// read each Pokémon in the memory. Reads more than 30 minutes apart belong to different runs; how many
-    /// Pokémon a run checked isn't known.
-    static func estimate(_ reads: [Date]) -> [InventoryStats.Run] {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyyMMdd_HHmmss"
-        var runs: [InventoryStats.Run] = []
-        var start: Date?, last: Date?
-        func close() {
-            if let start, let last {
-                runs.append(.init(id: f.string(from: start), date: start, duration: last.timeIntervalSince(start), checked: nil, errors: 0))
-            }
-        }
-        for t in reads.sorted() {
-            if let l = last, t.timeIntervalSince(l) > 30 * 60 { close(); start = nil }
-            if start == nil { start = t }
-            last = t
-        }
-        close()
-        return runs
     }
 }

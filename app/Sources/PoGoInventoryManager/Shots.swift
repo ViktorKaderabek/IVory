@@ -2,25 +2,33 @@
 import AppKit
 import SwiftUI
 
-/// README only: `IVORY_SHOTS=<folder> PoGoInventoryManager` opens the window with sample data (settings
-/// aren't saved), goes through the states in light and dark appearance and captures the window with its shadow.
-/// The app's own window can be captured even without screen recording permission.
-/// IVORY_SHOTS_HEIGHT = window height (default 1085).
+/// Appearance check and README pictures: one launch captures one state and quits.
+///
+///     IVORY_SHOTS=<folder> IVORY_SHOTS_NAME=run-ready IVORY_PREVIEW=none IVORY_STEP=rename …
+///
+/// What the state looks like is set by the same environment variables the normal appearance check uses
+/// (IVORY_PREVIEW, IVORY_PAGE, IVORY_STEP, IVORY_DETAIL, IVORY_BANNER, IVORY_SHOTS_CONSENT); this file
+/// only sizes the window, waits for the pictures to arrive and captures it with its shadow.
+/// IVORY_SHOTS_LOOK = dark | light, IVORY_SHOTS_WIDTH / _HEIGHT = the window size (1280×900 as in the design),
+/// IVORY_SHOTS_WAIT = how long to wait before the shot.
+/// `scripts/design-shots.sh` runs through every state.
 @MainActor
 enum ShotSession {
     static let folder = ProcessInfo.processInfo.environment["IVORY_SHOTS"].map { URL(fileURLWithPath: $0) }
     static var isActive: Bool { folder != nil }
+    /// Switches the screen before a shot (the appearance check uses it too).
+    static let pageNote = Notification.Name("IVoryShotPage")
     static let settingsNote = Notification.Name("IVoryShotSettings")
-    static let editorNote = Notification.Name("IVoryShotEditor")
     private static var started = false
 
-    /// Default settings (no UDID or Team ID), PvP tags on, renaming off.
+    private static var env: [String: String] { ProcessInfo.processInfo.environment }
+
+    /// Sample settings: every step on, no UDID or Team ID, nothing is saved to disk.
     static var demoConfig: AppConfig {
         var c = AppConfig()
-        c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: false, battle: false, weak: false)
-        c.language = ProcessInfo.processInfo.environment["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
-        // shots without the consent window; IVORY_SHOTS_CONSENT=1 captures the consent window
-        c.consentVersion = ProcessInfo.processInfo.environment["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
+        c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
+        c.language = env["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
+        c.consentVersion = env["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
         return c
     }
 
@@ -29,61 +37,25 @@ enum ShotSession {
         started = true
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         Task { @MainActor in
-            await run(folder: folder, runner: runner, store: store)
+            await run(folder: folder)
             NSApp.terminate(nil)
         }
     }
 
-    private static func run(folder: URL, runner: Runner, store: ConfigStore) async {
-        await pause(1.5)
+    private static func run(folder: URL) async {
+        NSApp.appearance = NSAppearance(named: env["IVORY_SHOTS_LOOK"] == "light" ? .aqua : .darkAqua)
+        await pause(0.6)
         guard let win = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil && $0.frame.width > 400 }) else {
-            print("✖ okno nenalezeno")
+            print("✖ window not found")
             return
         }
-        let defaults = UserDefaults.standard
-        let savedSections = defaults.string(forKey: "settingsOpenSections")
-        defaults.set(ProcessInfo.processInfo.environment["IVORY_SHOTS_SECTIONS"] ?? "pvp,rename", forKey: "settingsOpenSections")
         allowTallWindow(win)
+        place(win, NSSize(width: Double(env["IVORY_SHOTS_WIDTH"] ?? "") ?? 1280,
+                          height: Double(env["IVORY_SHOTS_HEIGHT"] ?? "") ?? 900))
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)
-        let height = Double(ProcessInfo.processInfo.environment["IVORY_SHOTS_HEIGHT"] ?? "") ?? 1085
-        let size = NSSize(width: 1040, height: height)
-
-        for (name, look) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
-            NSApp.appearance = NSAppearance(named: look)
-
-            store.config.steps = demoConfig.steps
-            runner.applyPreview("none")
-            place(win, size)
-            NSApp.activate(ignoringOtherApps: true)
-            win.makeKeyAndOrderFront(nil)
-            await pause(1.6)
-            print("okno \(win.frame) obrazovka \(win.screen?.visibleFrame ?? .zero) aktivní \(NSApp.isActive) klíčové \(win.isKeyWindow)")
-            shot([win], folder, "ready-\(name)")
-
-            store.config.steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
-            runner.applyPreview("running")
-            await pause(1.6)
-            shot([win], folder, "running-\(name)")
-
-            runner.applyPreview("done")
-            await pause(4.0)   // let the confetti finish
-            shot([win], folder, "done-\(name)")
-
-            place(win, NSSize(width: size.width + 400, height: size.height))
-            NotificationCenter.default.post(name: settingsNote, object: true)
-            await pause(1.2)
-            shot([win], folder, "settings-\(name)")
-
-            NotificationCenter.default.post(name: editorNote, object: true)
-            await pause(1.2)
-            if let sheet = win.attachedSheet { shot([sheet, win], folder, "editor-\(name)") }
-            NotificationCenter.default.post(name: editorNote, object: false)
-            await pause(0.8)
-            NotificationCenter.default.post(name: settingsNote, object: false)
-            await pause(0.8)
-        }
-        defaults.set(savedSections, forKey: "settingsOpenSections")
+        await pause(Double(env["IVORY_SHOTS_WAIT"] ?? "") ?? 3.0)   // the pictures download the first time round
+        shot([win], folder, env["IVORY_SHOTS_NAME"] ?? "shot")
     }
 
     /// Lets the window be taller than the screen (otherwise macOS shrinks it and the bottom of the content

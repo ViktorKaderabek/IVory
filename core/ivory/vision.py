@@ -66,9 +66,33 @@ class Frame:
     def fast(self):
         if self._tx is not None:
             return self._tx
-        if self._fast is None:
-            self._fast = ocr(self.raw, fast=True)
+        if self._fast is not None:
+            return self._fast
+        self._fast = ocr(self.raw, fast=True)
         return self._fast
+
+    def rough(self):
+        """The same frame, but whatever asks for its text gets the fast OCR (21 ms instead of 100).
+        Used to poll for a change – what the bot then acts on is always read with the accurate one."""
+        return RoughFrame(self)
+
+
+class RoughFrame:
+    """A Frame whose `texts` are the fast OCR. Everything else (the image, the time) is the frame's."""
+
+    def __init__(self, frame):
+        self.frame = frame
+
+    @property
+    def texts(self):
+        return self.frame.fast
+
+    @property
+    def fast(self):
+        return self.frame.fast
+
+    def __getattr__(self, name):
+        return getattr(self.frame, name)
 
 
 def in_region(t, region):

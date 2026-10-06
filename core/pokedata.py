@@ -17,7 +17,6 @@ Sources:
 import json
 import re
 import ssl
-import sys
 import urllib.request
 from pathlib import Path
 

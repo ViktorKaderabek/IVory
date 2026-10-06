@@ -77,41 +77,87 @@ final class Runner: ObservableObject {
         var phase = 0          // 0 = preparation, then 1…6 in the order of Step
     }
 
+    /// A Pokémon the bot has just read, for the "Now reading" panel. `seq` is its order in the run and
+    /// doubles as the identity SwiftUI animates on, so two Pokémon with the same CP and IV still count
+    /// as a change.
+    struct LiveMon: Identifiable, Equatable {
+        let seq: Int
+        let cp: Int
+        let name: String
+        let dex: Int?
+        let sid: String?
+        let iv: [Int]?
+        let pct: Int?
+        let level: Double?
+        let types: [String]
+        /// The IV tag it is going to get (the tagging itself happens later, in bulk).
+        let tag: String?
+        var id: Int { seq }
+    }
+
     struct LogLine: Identifiable {
         let id: Int
         let text: String
     }
 
-    @Published private(set) var lines: [LogLine] = []
-    @Published private(set) var isRunning = false
-    @Published private(set) var status = ""
-    @Published private(set) var outcome: Outcome?
-    @Published private(set) var stats = Stats()
+    /// The bot's output. It is its own object on purpose: a line arrives several times a second and if it
+    /// lived on `Runner`, every one of them would invalidate the whole screen instead of just the log.
+    let log = RunLog()
+    @Published var isRunning = false
+    @Published var status = ""
+    @Published var outcome: Outcome?
+    @Published var stats = Stats()
     /// Progress of the current phase (0–1) when the bot reports it (IV reading: "scan" with n/total); otherwise nil.
-    @Published private(set) var phaseProgress: Double?
-    @Published private(set) var activity = ""
-    @Published private(set) var startedAt: Date?
-    @Published private(set) var finishedAt: Date?
-    @Published private(set) var steps = Steps()
-    @Published private(set) var exitCode: Int32 = 0
+    @Published var phaseProgress: Double?
+    /// The Pokémon the bot has just read, and the few before it (newest first) – the live panel.
+    @Published var current: LiveMon?
+    @Published var justRead: [LiveMon] = []
+    /// How far the IV reading is ("264 / 425" in the live panel); nil outside that step.
+    @Published var scanned: (done: Int, total: Int)?
+    @Published var activity = ""
+    @Published var startedAt: Date?
+    @Published var finishedAt: Date?
+    @Published var steps = Steps()
+    @Published var exitCode: Int32 = 0
     /// "Tags in your storage" panel: tag → Pokémon count, storage size and the last change (lights up with +N).
-    @Published private(set) var tagCounts: [String: Int] = [:]
-    @Published private(set) var boxTotal = 0
-    @Published private(set) var lastTagChange: (tag: String, delta: Int)?
+    @Published var tagCounts: [String: Int] = [:]
+    @Published var boxTotal = 0
+    @Published var lastTagChange: (tag: String, delta: Int)?
     /// The message the bot ended with (a plain sentence for the hero card).
-    @Published private(set) var fatalText: String?
+    @Published var fatalText: String?
 
-    private var process: Process?
-    private var pending = ""
-    private var nextId = 0
-    private let maxLines = 4000
-    private var measuredSeen = Set<String>()
-    private var changeTask: Task<Void, Never>?
+    var process: Process?
+    var pending = ""
+    var measuredSeen = Set<String>()
+    var liveSeq = 0
+    /// How many of the last-read Pokémon the panel keeps.
+    static let justReadCount = 6
+    /// How much of a step the scroll through the list is worth. Scrolling covers about nine Pokémon a
+    /// second and reading them about one, so the list is roughly the first tenth of the step; counting
+    /// it a little higher keeps the progress from stalling at the hand-over.
+    static let listShare = 0.15
+
+    /// Pokémon are being read out of the appraisal right now. A step first scrolls through the list
+    /// (nothing to show yet), then reads them one by one, then tags – and the later steps don't read
+    /// at all. "Now reading" is worth the space only in the middle part; the rest of the time the tag
+    /// chart goes there instead.
+    var isReading: Bool {
+        guard isRunning, let s = scanned, s.total > 0 else { return false }
+        return s.done < s.total
+    }
+
+    /// How far the whole run is, 0–1: the steps already done plus how far the one under way has got.
+    /// Everything that shows a percentage shows this one, so the rail, the dial and the card agree.
+    var runProgress: Double {
+        let total = Double(Step.allCases.count)
+        return min(1, (Double(max(0, stats.phase - 1)) + (phaseProgress ?? 0)) / total)
+    }
+    var changeTask: Task<Void, Never>?
 
     static let resultsURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Desktop/pogo_runs")
 
-    private var scriptURL: URL? {
+    var scriptURL: URL? {
         Bundle.main.url(forResource: "run", withExtension: "sh", subdirectory: "scripts")
     }
 
@@ -152,6 +198,10 @@ final class Runner: ObservableObject {
         lastTagChange = nil
         fatalText = nil
         measuredSeen = []
+        current = nil
+        justRead = []
+        scanned = nil
+        liveSeq = 0
         activity = tr("Připravuji Appium a Python…", "Starting Appium and Python…")
         outcome = nil
         self.steps = steps
@@ -191,222 +241,40 @@ final class Runner: ObservableObject {
     }
 
     func clear() {
-        lines.removeAll()
+        log.clear()
     }
 
-    var logText: String {
-        lines.map(\.text).joined(separator: "\n")
-    }
+    var logText: String { log.text }
 
     func openResults() {
         try? FileManager.default.createDirectory(at: Self.resultsURL, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Self.resultsURL)
     }
 
-    private func consume(_ text: String) {
-        pending += text
-        while let range = pending.range(of: "\n") {
-            let line = String(pending[..<range.lowerBound])
-            pending.removeSubrange(..<range.upperBound)
-            if line.hasPrefix("@@") {
-                handleEvent(line.dropFirst(2))
-            } else {
-                append(line)
-            }
-        }
-    }
+    // MARK: - Bot events
 
-    private func append(_ line: String) {
-        lines.append(LogLine(id: nextId, text: line))
+    #if DEBUG
+    #endif
+
+}
+
+/// The bot's output, kept apart from `Runner` so a new line only redraws the log.
+@MainActor
+final class RunLog: ObservableObject {
+    @Published var lines: [Runner.LogLine] = []
+
+    var nextId = 0
+    let maxLines = 4000
+
+    func append(_ text: String) {
+        lines.append(Runner.LogLine(id: nextId, text: text))
         nextId += 1
         if lines.count > maxLines {
             lines.removeFirst(lines.count - maxLines)
         }
-        parseText(line)
     }
 
-    // MARK: - Bot events
+    func clear() { lines.removeAll() }
 
-    private func handleEvent(_ json: Substring) {
-        guard let data = json.data(using: .utf8),
-              let e = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let kind = e["e"] as? String else { return }
-        switch kind {
-        case "step":
-            if let t = e["text"] as? String { activity = t }
-        case "phase":
-            if let n = e["n"] as? Int, n != stats.phase {
-                stats.phase = n
-                phaseProgress = nil
-            }
-        case "scan":
-            if e["what"] as? String == "iv", let n = e["n"] as? Int, let total = e["total"] as? Int, total > 0 {
-                phaseProgress = min(1, Double(n) / Double(total))
-            }
-            if e["what"] as? String == "iv", e["iv"] as? [Int] != nil, let n = e["n"] as? Int {
-                let key = "\(stats.phase):\(n)"
-                if !measuredSeen.contains(key) {
-                    measuredSeen.insert(key)
-                    stats.measured += 1
-                }
-            }
-        case "tagcounts":
-            if let counts = e["counts"] as? [String: Int] { tagCounts = counts }
-            if let total = e["total"] as? Int { boxTotal = total }
-            if let tag = e["changed"] as? String, let delta = e["delta"] as? Int, delta != 0 {
-                flash(tag, delta)
-            }
-        case "tagged":
-            // during duplicates (the storage hasn't been fully read yet) count the tagged Pokémon directly
-            if let tag = e["tag"] as? String, let items = e["items"] as? [Any], e["remove"] as? Bool != true,
-               stats.phase <= 1 {
-                tagCounts[tag, default: 0] += items.count
-                stats.removable += items.count
-                flash(tag, items.count)
-            }
-            if let tag = e["tag"] as? String, let items = e["items"] as? [Any], e["remove"] as? Bool != true,
-               stats.phase == Step.battle.rawValue {
-                stats.battleTagged += items.count
-                activity = tr("Battle tagy", "Battle tags") + " · \(tag) +\(items.count)"
-            }
-            if let items = e["items"] as? [Any], e["remove"] as? Bool != true, stats.phase == Step.weak.rawValue {
-                stats.weakTagged += items.count
-                stats.removable += items.count
-                activity = tr("Slabé kusy", "Weak Pokémon") + " · +\(items.count)"
-            }
-        case "iv":
-            if let status = e["status"] as? String {
-                if status == "skip" { stats.skipped += 1 }
-                if status == "done", e["had"] as? Bool != true { stats.ivTagged += 1 }
-            }
-        case "rename":
-            if let old = e["old"] as? String, let new = e["new"] as? String {
-                stats.renamed += 1
-                activity = tr("Přejmenování", "Renaming") + " · \(old) → \(new)"
-            }
-        case "pvp":
-            if let name = e["name"] as? String, let tags = e["tags"] as? [String], let ranks = e["ranks"] as? [String: Any] {
-                let r = [("great", "G"), ("ultra", "U"), ("master", "M")]
-                    .map { key, letter in "\(letter)\((ranks[key] as? Int).map(String.init) ?? "–")" }
-                    .joined(separator: " ")
-                activity = tr("PvP tagy", "PvP tags") + " · \(name) · \(r)" + (tags.isEmpty ? "" : " → \(tags.joined(separator: ", "))")
-                if !tags.isEmpty { stats.pvpTagged += 1 }
-            }
-        case "problem":
-            stats.errors += 1
-            if let t = e["text"] as? String { activity = t }
-        case "fatal":
-            if let t = e["text"] as? String {
-                fatalText = t
-                activity = t
-            }
-        default:
-            break
-        }
-    }
-
-    /// A tag that just gained Pokémon lights up briefly.
-    private func flash(_ tag: String, _ delta: Int) {
-        lastTagChange = (tag, delta)
-        changeTask?.cancel()
-        changeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
-            guard !Task.isCancelled else { return }
-            self?.lastTagChange = nil
-        }
-    }
-
-    /// Plain text lines (slow mode, run.sh) – only what the events don't cover.
-    private func parseText(_ line: String) {
-        let t = line.trimmingCharacters(in: .whitespaces)
-        if t.isEmpty { return }
-        if t.range(of: #"^CP\d+: IV \d+/\d+/\d+"#, options: .regularExpression) != nil { stats.measured += 1 }
-        if t.hasPrefix("▶ "), !t.hasPrefix("▶ Start") { activity = String(t.dropFirst(2)) }
-        if t.hasPrefix("✖ ") { fatalText = String(t.dropFirst(2)) }
-    }
-
-    #if DEBUG
-    /// Only for checking the look: `IVORY_PREVIEW=running|done|stopped|error` fills in sample data as in the design.
-    func applyPreview(_ state: String) {
-        let sample: [String] = [
-            tr("Hledání ve hře: count & !legendary & !ultra beasts", "Search in the game: count & !legendary & !ultra beasts"),
-            tr("── Skupina: Charmander (3×)", "── Group: Charmander (3×)"),
-            tr("   klepnutí: otevřít CP812", "   tap: open CP812"),
-            tr("   ✔ tag Removable přidán: 2 Pokémoni", "   ✔ tag Removable added: 2 Pokémon"),
-            tr("!! nečekaná obrazovka – vracím se do inventáře", "!! unexpected screen – going back to the storage"),
-            tr("========== 2. část: třídím celý inventář do IV tagů ==========",
-               "========== Part 2: sorting the whole storage into IV tags =========="),
-            "   CP984   #0377  10/12/09  69 %  -> 70-0% Garbage",
-            "   CP1504  #0998  14/13/14  G12  U5  M30  -> Great, Ultra, Master",
-            "   CP1504  91 %  Baxcalibur → 91 Bax M30",
-        ]
-        lines.removeAll()
-        isRunning = false; outcome = nil; activity = ""; lastTagChange = nil
-        stats = Stats(); phaseProgress = nil; tagCounts = [:]; boxTotal = 0; startedAt = nil; finishedAt = nil
-        for l in sample { lines.append(LogLine(id: nextId, text: l)); nextId += 1 }
-        let now = Date()
-        steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
-        let counts = ["Removable": 38, "100% Perfect": 2, "95-99% Insane": 14, "90-95% Amazing": 31, "85-90% Great": 46,
-                      "80-85% Good": 58, "70-80% Mid": 97, "70-0% Garbage": 164, "Great League": 24,
-                      "Ultra League": 18, "Master League": 9, "Raid": 61, "GL Team": 3, "UL Team": 3, "ML Team": 3]
-        switch state {
-        case "running":
-            isRunning = true
-            stats = Stats(measured: 98, removable: 38, ivTagged: 233, errors: 1, phase: 2)
-            phaseProgress = 0.46
-            tagCounts = counts.mapValues { $0 / 2 }
-            boxTotal = 499
-            lastTagChange = ("90-95% Amazing", 1)
-            activity = tr("IV tagy · 93 % → 90-95% Amazing", "IV tags · 93% → 90-95% Amazing")
-            startedAt = now.addingTimeInterval(-1834)
-        case "done":
-            outcome = .done
-            stats = Stats(measured: 142, removable: 164, ivTagged: 412, pvpTagged: 51, renamed: 86, battleTagged: 70,
-                          weakTagged: 126, errors: 3, phase: 6)
-            tagCounts = counts
-            boxTotal = 499
-            startedAt = now.addingTimeInterval(-4328); finishedAt = now
-            lines.append(LogLine(id: nextId, text: "■ " + tr("Hotovo", "Done"))); nextId += 1
-        case "stopped":
-            outcome = .stopped
-            stats = Stats(measured: 64, removable: 19, errors: 1, phase: 2)
-            startedAt = now.addingTimeInterval(-1122); finishedAt = now
-            lines.append(LogLine(id: nextId, text: "■ " + tr("Zastaveno", "Stopped"))); nextId += 1
-        case "error":
-            outcome = .failed; exitCode = 1
-            stats = Stats(measured: 9, removable: 2, errors: 4, phase: 2)
-            startedAt = now.addingTimeInterval(-291); finishedAt = now
-            lines.append(LogLine(id: nextId, text: "■ " + tr("Skončilo s chybou (1)", "Failed (1)"))); nextId += 1
-        default:
-            lines.removeAll()
-        }
-    }
-    #endif
-
-    private func finished(code: Int32) {
-        (process?.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
-        if !pending.isEmpty {
-            if pending.hasPrefix("@@") { handleEvent(pending.dropFirst(2)) } else { append(pending) }
-            pending = ""
-        }
-        process = nil
-        isRunning = false
-        finishedAt = Date()
-        exitCode = code
-        switch code {
-        case 0:
-            status = tr("Hotovo", "Done")
-            outcome = .done
-            activity = tr("Hotovo – výsledky jsou ve složce pogo_runs", "Done – results are in the pogo_runs folder")
-        case 130:
-            status = tr("Zastaveno", "Stopped")
-            outcome = .stopped
-            activity = tr("Zastaveno – výsledky se uložily", "Stopped – results are saved")
-        default:
-            status = tr("Skončilo s chybou", "Failed")
-            outcome = .failed
-            activity = fatalText ?? tr("Skončilo s chybou (\(code)) – podívej se do výpisu", "Failed (\(code)) – check the log")
-        }
-        append("■ \(status)")
-    }
+    var text: String { lines.map(\.text).joined(separator: "\n") }
 }

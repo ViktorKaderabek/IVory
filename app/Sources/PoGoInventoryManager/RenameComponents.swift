@@ -167,9 +167,13 @@ final class LastBox {
 struct DualRange: View {
     @Binding var lo: Int
     @Binding var hi: Int
+    /// The compact form from the design: no scale under it, a smaller knob.
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
     @State private var dragging: Int?          // 0 = from, 1 = to
     @FocusState private var focus: Int?
+
+    private var knobSize: CGFloat { compact ? 16 : 20 }
 
     var body: some View {
         VStack(spacing: 2) {
@@ -177,15 +181,15 @@ struct DualRange: View {
                 let w = geo.size.width
                 let x = { (v: Int) in CGFloat(v) / 100 * w }
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Theme.track).frame(height: 4).padding(.horizontal, -10)
+                    Capsule().fill(Theme.track).frame(height: 4).padding(.horizontal, -knobSize / 2)
                     Capsule().fill(Theme.accent)
                         .frame(width: max(0, x(hi) - x(lo)), height: 4)
                         .offset(x: x(lo))
-                        .shadow(color: Theme.accent.opacity(0.55), radius: 6)
+                        .shadow(color: compact ? .clear : Theme.accent.opacity(0.55), radius: 6)
                     knob(0, at: x(lo))
                     knob(1, at: x(hi))
                 }
-                .frame(height: 24)
+                .frame(height: compact ? 18 : 24)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -199,19 +203,21 @@ struct DualRange: View {
                         }
                         .onEnded { _ in dragging = nil })
             }
-            .frame(height: 24)
-            .padding(.horizontal, 10)
-            GeometryReader { geo in
-                ForEach([0, 25, 50, 75, 100], id: \.self) { t in
-                    Text("\(t)")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(Theme.muted)
-                        .fixedSize()
-                        .position(x: CGFloat(t) / 100 * geo.size.width, y: 7)
+            .frame(height: compact ? 18 : 24)
+            .padding(.horizontal, knobSize / 2)
+            if !compact {
+                GeometryReader { geo in
+                    ForEach([0, 25, 50, 75, 100], id: \.self) { t in
+                        Text("\(t)")
+                            .font(.system(size: 11).monospacedDigit())
+                            .foregroundStyle(Theme.muted)
+                            .fixedSize()
+                            .position(x: CGFloat(t) / 100 * geo.size.width, y: 7)
+                    }
                 }
+                .frame(height: 14)
+                .padding(.horizontal, 10)
             }
-            .frame(height: 14)
-            .padding(.horizontal, 10)
         }
         .opacity(isEnabled ? 1 : 0.5)
         .animation(.snappy(duration: 0.15), value: dragging)
@@ -219,12 +225,12 @@ struct DualRange: View {
 
     private func knob(_ which: Int, at x: CGFloat) -> some View {
         Circle()
-            .fill(Theme.white)
-            .frame(width: 20, height: 20)
+            .fill(Color.oklch(0.98, 0.004, 280))
+            .frame(width: knobSize, height: knobSize)
             .overlay(Circle().strokeBorder(Theme.border))
-            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            .shadow(color: Theme.softShadow, radius: 1.5, y: 1)
             .background(Circle().fill(Theme.accent.opacity(0.3)).padding(dragging == which ? -6 : 0))
-            .offset(x: x - 10)
+            .offset(x: x - knobSize / 2)
             .zIndex(which == 0 && lo == hi && hi == 100 ? 3 : Double(which + 1))
             .focusable()
             .focused($focus, equals: which)

@@ -143,12 +143,20 @@ BAR_QUICK = 0.1                # enough if the bars stood still for X s and the 
 # Speed and robustness
 MJPEG_PORT = 9100              # Appium forwards it from the phone to localhost
 MJPEG_QUALITY = 60
-MJPEG_FPS = 30                 # more frames = the bot notices the next Pokémon sooner
+MJPEG_FPS = 60                 # more frames = the bot notices the next Pokémon sooner
 MJPEG_SCALE = 75               # stream resolution in % (OCR reads it without trouble)
 USE_STREAM = os.environ.get("POGO_NO_STREAM") != "1"
 EVENTS = os.environ.get("POGO_EVENTS") == "1"   # events for the app ("@@{json}" lines)
 LIVE = os.environ.get("POGO_LIVE") == "1"       # live screen preview for the app (LIVE_FILE)
 FRAME_LAG = 0.12               # a frame counts as a tap's result only if taken at least X s after the tap
+# Moving to the next Pokémon with the ▶ arrow is recognized by what is on the frame (other bars, another
+# name), not by "the screen changed", so a frame from just before the tap only reads as "not yet" – it
+# needs no lag, and waiting one out would cost a tenth of a second on every Pokémon.
+NEXT_LAG = 0.02
+# While waiting for a tap to take effect, every frame is checked with the fast OCR and the frame is
+# read with the accurate one at least this often. Text the fast OCR can't read therefore costs a
+# fraction of a second, not the whole timeout.
+CHECK_FULL = 0.2
 LONG_PRESS_SEC = 0.9
 NAV_TIMEOUT = 90               # seconds to get to the storage, then the game is restarted
 MAX_FAILS = 12                 # errors in a row without progress, then the run ends

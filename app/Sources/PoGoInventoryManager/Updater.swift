@@ -20,6 +20,13 @@ final class Updater: ObservableObject {
         let sha256: String?
     }
 
+    #if DEBUG
+    /// Appearance check only (IVORY_BANNER=1).
+    static let sampleRelease = Release(version: "1.2.0",
+                                       notesURL: URL(string: "https://github.com/\(repo)/releases")!,
+                                       dmgURL: URL(string: "https://github.com/\(repo)/releases")!, sha256: nil)
+    #endif
+
     enum State: Equatable {
         case idle
         case checking

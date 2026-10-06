@@ -31,9 +31,17 @@ def _measure_bar(img, label, y_end):
     bar = fill | track
     gap = max(3, int(cfg.BAR_GAP * W))
     best = None
+    too_wide = 0.95 * cfg.BAR_MAX_W * W     # see below
     for row in range(region.shape[0]):
         run = _bar_run(bar[row], gap)
         if run is None or run[0] > 0.25 * region.shape[1]:
+            continue
+        # The strip searched reaches further right than the bar can ever go, so a run that uses up
+        # nearly all of it is not a bar. It is the edge of the appraisal card: its antialiased pixels
+        # are the same grey as the empty part of a bar, and being the longest run on the strip it used
+        # to win – the bar then measured as empty (IV 0) and, as the longest of the three, it shrank
+        # the other two as well.
+        if run[1] - run[0] > too_wide:
             continue
         if best is None or run[1] - run[0] > best[1] - best[0]:
             best = (run[0], run[1], row)
@@ -62,6 +70,12 @@ def read_bars(img, labels):
     ends = [labels[1]["y0"] - 0.002, labels[2]["y0"] - 0.002, labels[2]["y1"] + pitch * 0.6]
     bars = [_measure_bar(img, lab, ye) for lab, ye in zip(labels, ends)]
     if any(b is None for b in bars):
+        return None, bars
+    # The game draws the three bars alike, so they must come out the same length. When they don't,
+    # something other than a bar was measured and the frame is not worth reading – the caller waits
+    # for the next one rather than recording a wrong IV.
+    widths = sorted(b[1] - b[0] for b in bars)
+    if widths[2] - widths[0] > 0.08 * widths[1]:
         return None, bars
     length = max(b[1] - b[0] for b in bars)      # all bars have the same length
     ivs = []
