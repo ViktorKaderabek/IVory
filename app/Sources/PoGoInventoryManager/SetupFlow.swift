@@ -172,9 +172,15 @@ final class SetupFlow: ObservableObject {
 
     // MARK: Apple ID
 
+    /// The one step that moves on by itself: a beat to see the tick, then on to installing.
     func signInSucceeded(appleId: String) {
         store?.config.appleId = appleId.trimmingCharacters(in: .whitespaces)
         markDone(.appleid)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            guard let self, self.isOpen, self.step == .appleid else { return }
+            self.advance()
+        }
     }
 
     // MARK: installing
