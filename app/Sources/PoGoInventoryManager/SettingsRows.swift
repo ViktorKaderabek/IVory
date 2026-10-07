@@ -26,10 +26,18 @@ struct GeneralRows: View {
     private var updateLine: String {
         var parts = [tr("Verze \(Consent.appVersion)", "Version \(Consent.appVersion)")]
         switch updater.state {
-        case .ready(let release, _): parts.append(tr("připravena \(release.version)", "\(release.version) ready"))
+        case .ready(let release, _): parts.append(tr("připravena \(release.version), restartuj v postranním panelu",
+                                                     "\(release.version) ready, restart from the sidebar"))
+        case .available(let release): parts.append(tr("nová verze \(release.version)", "\(release.version) available"))
+        case .downloading(let release, let done):
+            parts.append(tr("stahuji \(release.version) · \(percentText(Int(done * 100)))",
+                            "downloading \(release.version) · \(percentText(Int(done * 100)))"))
         case .checking: parts.append(tr("kontroluji…", "checking…"))
-        case .failed: parts.append(tr("kontrola selhala", "the check failed"))
-        default: parts.append(tr("máš nejnovější", "up to date"))
+        case .failed(let why, let release):
+            parts.append(release.map { tr("\($0.version) se nepodařilo stáhnout: \(why)", "couldn't download \($0.version): \(why)") }
+                         ?? tr("kontrola selhala", "the check failed"))
+        case .upToDate: parts.append(tr("máš nejnovější", "up to date"))
+        case .idle: break
         }
         return parts.joined(separator: " · ")
     }

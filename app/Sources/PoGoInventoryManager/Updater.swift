@@ -3,9 +3,9 @@ import CryptoKit
 import Foundation
 
 /// Updates from GitHub Releases: at launch (and then once every 24 h while "Check automatically" is on)
-/// it looks up the latest release. It downloads a new version only when the user asks, verifies the
-/// SHA-256 checksum (when the release provides one) and, after "Restart", replaces the app with the new
-/// one and relaunches it. It never installs anything on its own, and restarting is not possible while sorting.
+/// it looks up the latest release. A newer one is downloaded right away and its SHA-256 checksum verified;
+/// then the sidebar offers "Restart", which replaces the app with the new one and relaunches it. It never
+/// installs anything on its own, and restarting is not possible while sorting.
 @MainActor
 final class Updater: ObservableObject {
     static let shared = Updater()
@@ -38,10 +38,10 @@ final class Updater: ObservableObject {
     }
 
     @Published private(set) var state = State.idle
-    /// The banner's close button: hides it until the next launch (until then, only the settings mention the new version).
+    /// The card's close button: hides it until the next launch (until then, only the settings mention the new version).
     @Published var bannerHidden = false
-    /// Error banner only after a user action (download, install); a failed automatic check shows only in the settings.
-    @Published private(set) var showErrorBanner = false
+    /// Why "Restart" didn't work; the card says it and stays, so the update isn't lost.
+    @Published private(set) var installProblem: String?
     @Published private(set) var lastCheck: Date? = UserDefaults.standard.object(forKey: "updateLastCheck") as? Date
 
     private var downloadTask: Task<Void, Never>?
@@ -88,9 +88,7 @@ final class Updater: ObservableObject {
                 UserDefaults.standard.set(lastCheck, forKey: "updateLastCheck")
                 if let release, Self.isNewer(release.version, than: Self.currentVersion) {
                     state = .available(release)
-                    #if DEBUG
-                    if Self.autoTest { download() }
-                    #endif
+                    download()                       // the card shows once it's downloaded and verified
                 } else {
                     state = .upToDate
                 }
@@ -154,7 +152,6 @@ final class Updater: ObservableObject {
 
     func download() {
         guard let release, downloadTask == nil else { return }
-        showErrorBanner = false
         state = .downloading(release, 0)
         downloadTask = Task {
             defer { downloadTask = nil }
@@ -181,7 +178,6 @@ final class Updater: ObservableObject {
             } catch {
                 if Task.isCancelled { state = .available(release); return }
                 state = .failed(Self.describe(error), release)
-                showErrorBanner = true
             }
         }
     }
@@ -194,35 +190,41 @@ final class Updater: ObservableObject {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("IVory")
     }
 
-    /// Downloads the file to ~/Library/Caches/IVory, reporting progress (0…1).
+    /// Downloads the file to ~/Library/Caches/IVory with the system's downloader, reporting progress (0…1).
     private static func fetch(_ url: URL, version: String, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
         let target = cacheDir.appendingPathComponent("IVory-\(version).dmg")
         try? FileManager.default.removeItem(at: target)
-        let (bytes, response) = try await URLSession.shared.bytes(from: url)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 { throw URLError(.badServerResponse) }
-        let total = max(response.expectedContentLength, 1)
-        FileManager.default.createFile(atPath: target.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: target)
-        defer { try? handle.close() }
-        var buffer = Data()
-        buffer.reserveCapacity(1 << 20)
-        var received: Int64 = 0
-        var lastReport = 0.0
-        for try await byte in bytes {
-            buffer.append(byte)
-            if buffer.count >= 1 << 18 {
-                try Task.checkCancellation()
-                try handle.write(contentsOf: buffer)
-                received += Int64(buffer.count)
-                buffer.removeAll(keepingCapacity: true)
-                let p = min(1, Double(received) / Double(total))
-                if p - lastReport >= 0.01 { lastReport = p; progress(p) }
+        let box = DownloadBox()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (done: CheckedContinuation<URL, Error>) in
+                let task = URLSession.shared.downloadTask(with: url) { file, response, error in
+                    box.observation = nil
+                    if let error { done.resume(throwing: error); return }
+                    guard let file, (response as? HTTPURLResponse)?.statusCode == 200 else {
+                        done.resume(throwing: URLError(.badServerResponse))
+                        return
+                    }
+                    do {
+                        try FileManager.default.moveItem(at: file, to: target)
+                        done.resume(returning: target)
+                    } catch {
+                        done.resume(throwing: error)
+                    }
+                }
+                box.task = task
+                box.observation = task.progress.observe(\.fractionCompleted) { p, _ in progress(p.fractionCompleted) }
+                task.resume()
             }
+        } onCancel: {
+            box.task?.cancel()
         }
-        try handle.write(contentsOf: buffer)
-        progress(1)
-        return target
+    }
+
+    /// The running download, so a cancel can reach it, and the progress observation kept alive with it.
+    private final class DownloadBox: @unchecked Sendable {
+        var task: URLSessionDownloadTask?
+        var observation: NSKeyValueObservation?
     }
 
     // MARK: - Install and restart
@@ -231,16 +233,16 @@ final class Updater: ObservableObject {
     /// and launches the new one. If the app's folder isn't writable (or the app runs from the DMG),
     /// it opens the DMG for a manual install.
     func installAndRestart() {
-        guard case .ready(let release, let dmg) = state else { return }
+        guard case .ready(_, let dmg) = state else { return }
         guard !Runner.shared.isRunning else { return }
+        installProblem = nil
         let target = Bundle.main.bundleURL
         let parent = target.deletingLastPathComponent()
         let translocated = target.path.contains("/AppTranslocation/") || target.path.hasPrefix("/Volumes/")
         guard !translocated, FileManager.default.isWritableFile(atPath: parent.path) else {
             NSWorkspace.shared.open(dmg)
-            state = .failed(tr("Do složky s aplikací nejde zapisovat. Přetáhni novou verzi z otevřeného DMG do Aplikací.",
-                               "Can't write to the app's folder. Drag the new version from the opened DMG to Applications."), release)
-            showErrorBanner = true
+            installProblem = tr("IVory neběží ze složky Aplikace, takže se nemůže sama přepsat. Přetáhni novou verzi z otevřeného DMG do Aplikací.",
+                                "IVory isn't running from Applications, so it can't replace itself. Drag the new version from the opened DMG to Applications.")
             return
         }
         do {
@@ -260,8 +262,7 @@ final class Updater: ObservableObject {
             try p.run()
             NSApp.terminate(nil)
         } catch {
-            state = .failed(Self.describe(error), release)
-            showErrorBanner = true
+            installProblem = Self.describe(error)
         }
     }
 
@@ -338,7 +339,6 @@ final class Updater: ObservableObject {
         case "ready": state = .ready(r, URL(fileURLWithPath: "/dev/null"))
         case "error":
             state = .failed(tr("Zkontroluj připojení k internetu.", "Check your internet connection."), r)
-            showErrorBanner = true
         default: state = .upToDate
         }
         return true
