@@ -39,8 +39,8 @@ final class SetupFlow: ObservableObject {
     var store: ConfigStore? { ConfigStore.current }
     var config: AppConfig { store?.config ?? AppConfig() }
 
-    /// The guide can be closed with Esc only when it was opened on purpose; the first time through it
-    /// is the way into the app.
+    /// Close (and Esc) once IVory has been set up, or when the guide was opened just to sign in; the
+    /// first time through, the guide is the way into the app.
     var canClose: Bool { config.setupDone || onlySignIn }
 
     /// The Apple ID as the guide shows it (the trust path, the signing row).

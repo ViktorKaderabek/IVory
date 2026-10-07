@@ -29,6 +29,7 @@ enum ShotSession {
         c.steps = Steps(duplicates: true, iv: true, pvp: true, rename: true, battle: true, weak: true)
         c.language = env["IVORY_SHOTS_LANG"] == "cs" ? .cs : .en
         c.consentVersion = env["IVORY_SHOTS_CONSENT"] == "1" ? 0 : Consent.version
+        c.setupDone = env["IVORY_SHOTS_SETUP_DONE"] == "1"          // the guide reopened later: it has Close
         return c
     }
 

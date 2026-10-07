@@ -22,13 +22,6 @@ struct SetupGuide: View {
                     insertion: .modifier(active: PageIn(y: 10, opacity: 0), identity: PageIn(y: 0, opacity: 1)),
                     removal: .opacity))
         }
-        .background {
-            // Esc closes a guide opened on purpose (Settings, after a failed run)
-            Button("") { flow.close() }
-                .keyboardShortcut(.cancelAction)
-                .disabled(!flow.canClose)
-                .hidden()
-        }
         .onChange(of: signIn.state) { _, state in
             if state == .needsCode { flow.go(to: .appleidCode) }
             if case .failed = state, flow.screen == .appleidCode { flow.go(to: .appleid) }
@@ -54,7 +47,15 @@ struct SetupGuide: View {
 
     // MARK: the buttons
 
+    /// The step's buttons, plus Close (and Esc) once IVory has been set up – the first time through,
+    /// the guide is the way into the app.
     private var footer: SetupFooterBar {
+        var bar = stepButtons
+        if flow.canClose { bar.close = flow.close }
+        return bar
+    }
+
+    private var stepButtons: SetupFooterBar {
         let next = tr("Pokračovat", "Continue")
         let done = flow.done
         let back = flow.onlySignIn ? nil : flow.screen.back.map { target in { flow.go(to: target) } }
