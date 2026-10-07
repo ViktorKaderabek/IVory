@@ -56,6 +56,7 @@ enum AppleAccount {
 
     static func bundleIsIntact() -> Bool {
         if let intact { return intact }
+        removeStrayBytecode()
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code) == errSecSuccess, let code else {
             intact = false
@@ -65,6 +66,20 @@ enum AppleAccount {
         let ok = SecStaticCodeCheckValidity(code, flags, nil) == errSecSuccess
         intact = ok
         return ok
+    }
+
+    /// IVory up to 1.4.5 let Python write its compiled files (`__pycache__`) into the app's own core
+    /// folder. They aren't part of the signature, so the check above saw a changed app and refused the
+    /// password. They are only a cache: removing them puts the bundle back exactly as signed.
+    private static func removeStrayBytecode() {
+        let core = Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/core")
+        guard let walk = FileManager.default.enumerator(at: core, includingPropertiesForKeys: nil) else { return }
+        var stray: [URL] = []
+        for case let url as URL in walk where url.lastPathComponent == "__pycache__" {
+            stray.append(url)
+            walk.skipDescendants()
+        }
+        for url in stray { try? FileManager.default.removeItem(at: url) }
     }
 
     // MARK: - the cached session

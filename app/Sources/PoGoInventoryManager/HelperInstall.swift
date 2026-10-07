@@ -35,8 +35,7 @@ final class HelperInstall: ObservableObject {
             return
         }
         let process = LineProcess(python, ["\(DeviceTools.core)/setup.py", "install", udid, appleId],
-                                  environment: ["PYTHONPATH": DeviceTools.core, "PYTHONUNBUFFERED": "1",
-                                                "PYTHONWARNINGS": "ignore"])
+                                  environment: DeviceTools.pythonEnvironment)
         process.onLine = { [weak self, weak process] line in
             guard let self, let process, process === self.process,
                   let e = LineProcess.event(line, kind: "setup") else { return }
