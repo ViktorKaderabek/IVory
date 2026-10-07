@@ -15,7 +15,6 @@ set -euo pipefail
 
 WDA_VERSION=v16.14.0
 WDA_SHA=6f7758f72d348d2c35c3fd134fa76a941bba0c447de04b2e9d065682f31fc47f
-ALTSIGN_COMMIT=476eaddd84cf3a833550e074fd2b1d12aec3b0a1
 OPENSSL_VERSION=3.5.4
 OPENSSL_SHA=967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99
 MACOS_MIN=14.0
@@ -85,9 +84,11 @@ build_openssl() {
 }
 
 # altsign-cli for one architecture, the same compile as its own build.sh but against the static OpenSSL.
+# ivory_log.h (from the patch) is included into every file: it keeps the log out of the system log.
 build_altsign() {
   local arch="$1" ssl="$ROOT/build/openssl-$1" sdk; sdk="$(xcrun --show-sdk-path)"
-  local flags=(-arch "$arch" -mmacosx-version-min="$MACOS_MIN" -isysroot "$sdk" -DCORECRYPTO_DONOT_USE_TRANSPARENT_UNION -IDependencies)
+  local flags=(-arch "$arch" -mmacosx-version-min="$MACOS_MIN" -isysroot "$sdk" -DCORECRYPTO_DONOT_USE_TRANSPARENT_UNION
+               -IDependencies -include ivory_log.h)
   ( cd "$SRC" \
     && clang -ObjC -fobjc-arc "${flags[@]}" -c Dependencies/corecrypto/ccsrp.m -o "$WORK/ccsrp-$arch.o" \
     && clang++ -std=c++17 -ObjC++ -fobjc-arc -w "${flags[@]}" -I"$ssl/include" \
@@ -98,31 +99,23 @@ build_altsign() {
 }
 
 if [ "$FORCE" = 1 ] || [ ! -x "$OUT/altsign-cli" ]; then
-  echo "▶ altsign-cli ${ALTSIGN_COMMIT:0:12}"
-  SRC="$ROOT/build/altsign-cli"
-  if [ ! -d "$SRC/.git" ]; then
-    rm -rf "$SRC"
-    git clone -q https://github.com/xhzq233/altsign-cli "$SRC" || die "Klonování altsign-cli selhalo."
-  fi
-  git -C "$SRC" cat-file -e "$ALTSIGN_COMMIT^{commit}" 2>/dev/null || git -C "$SRC" fetch -q --all
-  git -C "$SRC" reset -q --hard
-  git -C "$SRC" checkout -q "$ALTSIGN_COMMIT" || die "Commit $ALTSIGN_COMMIT v altsign-cli není."
-  # IVory's changes (scripts/altsign-ivory.patch): never revoke a certificate IVory didn't make, put the
-  # user's keychain list back after signing, random passwords for the throwaway keychain and .p12.
-  git -C "$SRC" apply "$ROOT/scripts/altsign-ivory.patch" || die "Patch altsign-cli nejde použít."
+  echo "▶ altsign-cli (vendor/altsign-cli + vendor/altsign-cli.patch)"
   WORK="$(mktemp -d)"
+  SRC="$WORK/src"
+  cp -R "$ROOT/vendor/altsign-cli" "$SRC"
+  ( cd "$SRC" && patch -s -p1 < "$ROOT/vendor/altsign-cli.patch" ) || die "Patch altsign-cli nejde použít."
   for arch in arm64 x86_64; do
     build_openssl "$arch"
     build_altsign "$arch"
   done
   lipo -create "$WORK/altsign-cli-arm64" "$WORK/altsign-cli-x86_64" -output "$OUT/altsign-cli"
-  rm -rf "$WORK"
   chmod +x "$OUT/altsign-cli"
   ! otool -L "$OUT/altsign-cli" | grep -q -e /opt/ -e /usr/local/ || die "altsign-cli odkazuje na knihovnu mimo systém."
-  # AGPL-3.0: shipping the binary obliges us to point at its source.
+  # AGPL-3.0: shipping the binary obliges us to offer its source – it's vendor/ in IVory's repository.
   cp "$SRC/LICENSE" "$OUT/altsign-cli.LICENSE"
-  printf 'altsign-cli %s\nhttps://github.com/xhzq233/altsign-cli\nAGPL-3.0 – source at the URL above.\n' \
-    "$ALTSIGN_COMMIT" > "$OUT/altsign-cli.SOURCE"
+  printf 'altsign-cli (AGPL-3.0)\nSource: https://github.com/ViktorKaderabek/IVory/tree/main/vendor (upstream https://github.com/xhzq233/altsign-cli)\n' \
+    > "$OUT/altsign-cli.SOURCE"
+  rm -rf "$WORK"
   echo "  ✔ $(lipo -archs "$OUT/altsign-cli"), $(du -sh "$OUT/altsign-cli" | cut -f1)"
 fi
 

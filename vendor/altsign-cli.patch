@@ -84,11 +84,74 @@ index 8af7931..abcd7a3 100644
                      NSLog(@"[API] Certificate fetched after CSR: %@ (hasData=%d)", cert.identifier, (cert.data != nil));
                      completion(cert, nil);
                  }];
+diff --git a/certificate_request.mm b/certificate_request.mm
+index f3f30a6..b914252 100644
+--- a/certificate_request.mm
++++ b/certificate_request.mm
+@@ -153,7 +153,6 @@ - (void)generateRequest:(NSData **)outputRequest privateKey:(NSData **)outputPri
+     *outputPrivateKey = [NSData dataWithBytes:privateKeyData length:privateKeyLength];
+ 
+     NSLog(@"[CSR] csrLen=%ld privKeyLen=%ld", csrLength, privateKeyLength);
+-    NSLog(@"[CSR] outputRequest=%@ outputPrivateKey=%@", *outputRequest, *outputPrivateKey);
+ 
+     finish();
+ }
+diff --git a/ivory_log.h b/ivory_log.h
+new file mode 100644
+index 0000000..d5eb555
+--- /dev/null
++++ b/ivory_log.h
+@@ -0,0 +1,18 @@
++// IVory: NSLog also copies every line into the macOS unified log, where other software and diagnostic
++// reports can read it. altsign-cli's output is only for whoever ran it, so it goes to stderr alone.
++// Included into every source file by the build (-include ivory_log.h).
++#define __STDC_WANT_LIB_EXT1__ 1          // memset_s, for wiping key material
++#include <string.h>
++#import <Foundation/Foundation.h>
++#include <stdio.h>
++
++static inline void IVoryLog(NSString *format, ...) NS_FORMAT_FUNCTION(1, 2);
++static inline void IVoryLog(NSString *format, ...) {
++    va_list args;
++    va_start(args, format);
++    NSString *line = [[NSString alloc] initWithFormat:format arguments:args];
++    va_end(args);
++    fprintf(stderr, "%s\n", line.UTF8String);
++}
++
++#define NSLog(...) IVoryLog(__VA_ARGS__)
 diff --git a/main.mm b/main.mm
-index a7496a7..1a8e64d 100644
+index a7496a7..10c3316 100644
 --- a/main.mm
 +++ b/main.mm
-@@ -649,6 +649,10 @@ static BOOL performSign(NSString *appleID, NSString *password,
+@@ -446,8 +446,6 @@ static BOOL performSign(NSString *appleID, NSString *password,
+     NSLog(@"========================================");
+     NSLog(@" AltSign CLI - IPA/.app signing tool");
+     NSLog(@"========================================");
+-    NSLog(@" Apple ID:  %@", appleID);
+-    NSLog(@" UDID:      %@", udid);
+     NSLog(@" Input:     %@", inputPath);
+     NSLog(@" Output:    %@", outputPath);
+     NSLog(@"========================================");
+@@ -459,7 +457,7 @@ static BOOL performSign(NSString *appleID, NSString *password,
+             dispatch_semaphore_signal(sem);
+             return;
+         }
+-        NSLog(@"[Step 1] Login successful! DSID: %@", account.identifier);
++        NSLog(@"[Step 1] Login successful!");
+ 
+         ALTAppleAPI *api = [ALTAppleAPI sharedAPI];
+ 
+@@ -492,7 +490,7 @@ static BOOL performSign(NSString *appleID, NSString *password,
+ 
+                 void (^continueWithCert)(ALTCertificate *) = ^(ALTCertificate *cert) {
+                     // Step 4: 注册设备
+-                    NSLog(@"[Step 4] Registering device: %@", udid);
++                    NSLog(@"[Step 4] Registering device");
+                     [api registerDeviceWithName:@"AltSign Device" identifier:udid team:team session:session completionHandler:^(ALTDevice *device, NSError *error) {
+                         if (error || device == nil) {
+                             NSLog(@"[Error] Failed to register device: %@", error);
+@@ -649,6 +647,10 @@ static BOOL performSign(NSString *appleID, NSString *password,
                      }
                      [api submitCertificateRequest:certReq.data team:team session:session completionHandler:^(ALTCertificate *cert, NSError *error) {
                          if (error || !cert) {
@@ -99,7 +162,7 @@ index a7496a7..1a8e64d 100644
                              NSLog(@"[Error] Failed to create certificate: %@", error);
                              dispatch_semaphore_signal(sem);
                              return;
-@@ -660,23 +664,28 @@ static BOOL performSign(NSString *appleID, NSString *password,
+@@ -660,23 +662,28 @@ static BOOL performSign(NSString *appleID, NSString *password,
                      }];
                  };
  
@@ -145,6 +208,15 @@ index a7496a7..1a8e64d 100644
                  } else {
                      createNewCert();
                  }
+@@ -700,7 +707,7 @@ static BOOL performList(NSString *appleID, NSString *password, NSString *teamID)
+             dispatch_semaphore_signal(sem);
+             return;
+         }
+-        NSLog(@"Login successful! DSID: %@", account.identifier);
++        NSLog(@"Login successful!");
+ 
+         ALTAppleAPI *api = [ALTAppleAPI sharedAPI];
+         [api fetchTeamsForAccount:account session:session
 diff --git a/signer.mm b/signer.mm
 index 2550cbb..3b15f07 100644
 --- a/signer.mm
@@ -250,3 +322,148 @@ index 2550cbb..3b15f07 100644
  - (int)runTask:(NSString *)launchPath args:(NSArray *)args {
      NSTask *task = [[NSTask alloc] init];
      task.launchPath = launchPath;
+diff --git a/srp_auth.mm b/srp_auth.mm
+index d377447..899dfb4 100644
+--- a/srp_auth.mm
++++ b/srp_auth.mm
+@@ -91,6 +91,8 @@ static void ALTDigestUpdateData(const struct ccdigest_info *diInfo, struct ccdig
+                                diInfo->output_size,
+                                data.mutableBytes);
+ 
++    memset_s(digestRaw, passwordDiInfo->output_size, 0, passwordDiInfo->output_size);
++    memset_s(digest, finalDigestLen, 0, finalDigestLen);
+     free(digestRaw);
+     free(digest);
+ 
+@@ -369,18 +371,9 @@ - (BOOL)saveForAppleID:(NSString *)appleID {
+         session[@"expirationDate"] = self.expirationDate;
+     }
+ 
+-    NSMutableDictionary *anisette = [NSMutableDictionary dictionary];
+-    anisette[@"machineID"] = self.anisetteData.machineID ?: @"";
+-    anisette[@"oneTimePassword"] = self.anisetteData.oneTimePassword ?: @"";
+-    anisette[@"localUserID"] = self.anisetteData.localUserID ?: @"";
+-    anisette[@"routingInfo"] = @(self.anisetteData.routingInfo);
+-    anisette[@"deviceUniqueIdentifier"] = self.anisetteData.deviceUniqueIdentifier ?: @"";
+-    anisette[@"deviceSerialNumber"] = self.anisetteData.deviceSerialNumber ?: @"";
+-    anisette[@"deviceDescription"] = self.anisetteData.deviceDescription ?: @"";
+-    anisette[@"date"] = self.anisetteData.date ?: [NSDate date];
+-    anisette[@"locale"] = self.anisetteData.locale ?: @"";
+-    anisette[@"timeZone"] = self.anisetteData.timeZone ?: @"";
+-    session[@"anisetteData"] = anisette;
++    // IVory: the machine data (serial number, device ID, one-time password) is fetched afresh on every
++    // run, so the session file doesn't keep a copy of it.
++    session[@"anisetteData"] = @{};
+ 
+     NSFileManager *fm = NSFileManager.defaultManager;
+     NSString *directory = SessionStoreDirectory();
+@@ -396,6 +389,8 @@ - (BOOL)saveForAppleID:(NSString *)appleID {
+                            error:nil]) {
+         return NO;
+     }
++    // IVory: the session token and the signing keys stay out of Time Machine backups.
++    [[NSURL fileURLWithPath:directory] setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+     if (![session writeToFile:SessionStorePath() atomically:YES]) {
+         return NO;
+     }
+@@ -483,12 +478,13 @@ @implementation ALTAccount
+ 
+ @interface ALTSRPContext : NSObject
+ @property (nonatomic, assign) struct ccsrp_ctx *srpCtx;
++@property (nonatomic, assign) size_t srpSize;
+ @property (nonatomic, assign) struct ccdigest_ctx *diCtx;
+ @end
+ 
+ @implementation ALTSRPContext
+ - (void)dealloc {
+-    if (_srpCtx) { free(_srpCtx); _srpCtx = NULL; }
++    if (_srpCtx) { memset_s(_srpCtx, _srpSize, 0, _srpSize); free(_srpCtx); _srpCtx = NULL; }
+     if (_diCtx) { free(_diCtx); _diCtx = NULL; }
+ }
+ @end
+@@ -522,7 +518,7 @@ + (void)authenticateWithAppleID:(NSString *)appleID
+               verificationHandler:(nullable ALTVerificationHandler)verificationHandler
+               completionHandler:(void (^)(ALTAccount * _Nullable, ALTAppleAPISession * _Nullable, NSError * _Nullable))completion
+ {
+-    NSLog(@"[SRP] Starting authentication for %@", appleID);
++    NSLog(@"[SRP] Starting authentication");
+ 
+     NSString *clientTime = [GSAClientTimeFormatter() stringFromDate:anisetteData.date ?: [NSDate date]];
+     NSString *locale = [NSLocale currentLocale].localeIdentifier ?: anisetteData.locale ?: @"en_US";
+@@ -553,7 +549,8 @@ + (void)authenticateWithAppleID:(NSString *)appleID
+     ctx.diCtx = (struct ccdigest_ctx *)malloc(ccdigest_di_size(diInfo));
+     ccdigest_init(diInfo, ctx.diCtx);
+ 
+-    ctx.srpCtx = (struct ccsrp_ctx *)malloc(ccsrp_sizeof_srp(diInfo, gp));
++    ctx.srpSize = ccsrp_sizeof_srp(diInfo, gp);
++    ctx.srpCtx = (struct ccsrp_ctx *)malloc(ctx.srpSize);
+     ccsrp_ctx_init(ctx.srpCtx, diInfo, gp);
+     ccsrp_client_set_noUsernameInX(ctx.srpCtx, true);
+     SRP_RNG(ctx.srpCtx) = ccrng(NULL);
+@@ -606,10 +603,18 @@ + (void)authenticateWithAppleID:(NSString *)appleID
+         NSNumber *iterations = initResponse[@"i"];
+         NSData *BData = initResponse[@"B"];
+ 
+-        if (!cValue || !salt || !iterations || !BData) {
++        size_t BSize = ccsrp_exchange_size(srpContext.srpCtx);
++        if (!cValue || ![salt isKindOfClass:NSData.class] || ![iterations isKindOfClass:NSNumber.class] ||
++            iterations.intValue <= 0 || ![BData isKindOfClass:NSData.class] || BData.length == 0 || BData.length > BSize) {
+             completion(nil, nil, SRPError(kAltSignErrorCodeGeneric, @"Invalid init challenge"));
+             return;
+         }
++        if (BData.length < BSize) {
++            // corecrypto reads exactly BSize bytes: a B with its leading zeros dropped is padded back
++            NSMutableData *padded = [NSMutableData dataWithLength:BSize - BData.length];
++            [padded appendData:BData];
++            BData = padded;
++        }
+ 
+         NSData *passwordKey = ALTPBKDF2SRP(diInfo, isS2K, password, salt, iterations.intValue);
+         if (!passwordKey) {
+@@ -648,7 +653,8 @@ + (void)authenticateWithAppleID:(NSString *)appleID
+             }
+ 
+             NSData *M2Data = completeResponse[@"M2"];
+-            if (!M2Data || !ccsrp_client_verify_session(srpContext.srpCtx, (const uint8_t *)M2Data.bytes)) {
++            if (![M2Data isKindOfClass:NSData.class] || M2Data.length != ccsrp_session_size(srpContext.srpCtx) ||
++                !ccsrp_client_verify_session(srpContext.srpCtx, (const uint8_t *)M2Data.bytes)) {
+                 completion(nil, nil, SRPError(kAltSignErrorCodeGeneric, @"Failed to verify SRP session"));
+                 return;
+             }
+@@ -870,7 +876,7 @@ + (void)_requestTwoFactorCodeForDSID:(NSString *)dsid
+         [request setValue:headers[key] forHTTPHeaderField:key];
+     }
+ 
+-    NSLog(@"[2FA] Requesting trusted device code for DSID %@...", dsid);
++    NSLog(@"[2FA] Requesting trusted device code...");
+     NSURLSessionDataTask *task = [ALTSharedSession()
+         dataTaskWithRequest:request
+           completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+@@ -893,7 +899,8 @@ + (void)_requestTwoFactorCodeForDSID:(NSString *)dsid
+                 bodyPreview = [NSString stringWithFormat:@"(binary, %lu bytes)", (unsigned long)data.length];
+             }
+         }
+-        NSLog(@"[2FA] Trusted device request HTTP %ld, bodyPreview: %@", (long)httpStatus, bodyPreview);
++        NSLog(@"[2FA] Trusted device request HTTP %ld", (long)httpStatus);
++        (void)bodyPreview;
+         if (httpStatus < 200 || httpStatus >= 300) {
+             completion(SRPError(httpStatus, [NSString stringWithFormat:@"HTTP %ld from 2FA request", (long)httpStatus]));
+             return;
+@@ -1006,7 +1013,7 @@ + (void)submitTwoFactorCode:(NSString *)code
+         [validateRequest setValue:headers[key] forHTTPHeaderField:key];
+     }
+ 
+-    NSLog(@"[2FA] Validating code for DSID %@...", dsid);
++    NSLog(@"[2FA] Validating code...");
+     NSURLSessionDataTask *validateTask = [ALTSharedSession()
+         dataTaskWithRequest:validateRequest
+           completionHandler:^(NSData *validateData, NSURLResponse *validateResponse, NSError *validateError) {
+@@ -1033,7 +1040,7 @@ + (void)submitTwoFactorCode:(NSString *)code
+         NSString *raw = [[NSString alloc] initWithData:validateData encoding:NSUTF8StringEncoding];
+         if (raw) {
+             NSString *preview = (ALTVerboseLogging || raw.length <= 300) ? raw : [raw substringToIndex:300];
+-            NSLog(@"[2FA] Validate response: %@", preview);
++            (void)preview;
+         }
+ 
+         NSError *parseError = nil;
