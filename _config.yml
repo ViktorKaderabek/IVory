@@ -1,0 +1,29 @@
+# GitHub Pages (https://viktorkaderabek.github.io/IVory/): the README as the home page, with the
+# title, description and preview image search engines and link previews read, and a sitemap.xml.
+title: IVory
+tagline: Pokémon GO storage manager for Mac
+description: >-
+  Free Mac app that tidies your Pokémon GO storage on a USB-connected iPhone: tags worse duplicates,
+  sorts everything into IV tags, tags PvP and raid teams and renames your best Pokémon.
+url: https://viktorkaderabek.github.io
+baseurl: /IVory
+lang: en
+image: /docs/social-card.png
+author: Viktor Kadeřábek
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Google Search Console ownership check: paste the code from its "HTML tag" method here.
+# webmaster_verifications:
+#   google: <code>
+
+# Only the page and its pictures are the website; the code stays on GitHub.
+exclude:
+  - app
+  - core
+  - scripts
+  - tests
+  - vendor/altsign-cli
+  - Start.command

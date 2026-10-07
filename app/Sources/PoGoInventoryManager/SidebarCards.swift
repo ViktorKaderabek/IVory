@@ -208,10 +208,10 @@ struct UpdateCard: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Text(tr("Restart zabere pár vteřin. Nastavení i paměť zůstanou.",
-                        "Restarting takes a few seconds. Your settings and memory stay."))
+                Text(updater.installProblem ?? tr("Restart zabere pár vteřin. Nastavení i paměť zůstanou.",
+                                                  "Restarting takes a few seconds. Your settings and memory stay."))
                     .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(updater.installProblem == nil ? Theme.muted : Theme.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Button { updater.installAndRestart() } label: {
