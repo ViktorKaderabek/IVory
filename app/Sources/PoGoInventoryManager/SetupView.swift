@@ -209,12 +209,24 @@ struct SetupFooterBar: View {
         let run: () -> Void
     }
 
+    /// Leaving the guide: only offered once IVory has been set up (see SetupFlow.canClose).
+    var close: (() -> Void)? = nil
     var back: (() -> Void)? = nil
     var secondary: Action? = nil
     let primary: Action
 
     var body: some View {
         HStack(spacing: 8) {
+            if let close {
+                Button(action: close) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                        Text(tr("Zavřít", "Close"))
+                    }
+                }
+                .buttonStyle(SetupButton(kind: .back))
+                .keyboardShortcut(.cancelAction)
+            }
             if let back {
                 Button(action: back) {
                     HStack(spacing: 6) {
