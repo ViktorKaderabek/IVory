@@ -43,6 +43,7 @@ STATES=(
   "26-setup-uiauto|IVORY_PREVIEW=none IVORY_SETUP=uiauto"
   "27-setup-appleid|IVORY_PREVIEW=none IVORY_SETUP=appleid"
   "28-setup-appleid-error|IVORY_PREVIEW=none IVORY_SETUP=appleid-error"
+  "28b-setup-appleid-ok|IVORY_PREVIEW=none IVORY_SETUP=appleid-ok"
   "29-setup-appleid-code|IVORY_PREVIEW=none IVORY_SETUP=appleid-code"
   "30-setup-install|IVORY_PREVIEW=none IVORY_SETUP=install"
   "31-setup-helper|IVORY_PREVIEW=none IVORY_SETUP=helper"

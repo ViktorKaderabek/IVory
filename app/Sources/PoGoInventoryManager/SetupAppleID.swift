@@ -10,15 +10,20 @@ struct AppleIdScreen: View {
     @FocusState private var codeFocused: Bool
 
     private var isCode: Bool { flow.screen == .appleidCode }
+    /// Signed in, and nothing new being typed: the tick instead of the form.
+    private var signedIn: Bool { flow.done.contains(.appleid) && !signIn.busy && !form.hasPassword }
 
     var body: some View {
         HStack(alignment: .center, spacing: 56) {
             CenteredColumn {
                 VStack(alignment: .leading, spacing: 22) {
                     SetupHeading(title: flow.screen.title, lead: flow.screen.lead)
-                    if isCode { code } else { fields }
-                    if flow.done.contains(.appleid) && !signIn.busy {
-                        StatusCard(kind: .ok, text: tr("Přihlášeno jako \(store.config.appleId)", "Signed in as \(store.config.appleId)"))
+                    if signedIn {
+                        SignedIn(appleId: store.config.appleId)
+                    } else if isCode {
+                        code
+                    } else {
+                        fields
                     }
                 }
                 .frame(maxWidth: 400, alignment: .leading)
@@ -126,6 +131,33 @@ struct AppleIdScreen: View {
                    text: tr("iPhone nejdřív ukáže upozornění na přihlášení. Klepni na Povolit a kód napiš sem.",
                             "Your iPhone shows a sign-in alert first. Tap Allow, then type the code here."))
         }
+    }
+}
+
+/// The form's place once signed in: a green tick that pops in, and the account.
+private struct SignedIn: View {
+    let appleId: String
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle().fill(SW.green)
+                Image(systemName: "checkmark").font(.system(size: 20, weight: .heavy)).foregroundStyle(SW.onAccent)
+            }
+            .frame(width: 44, height: 44)
+            .modifier(SetupPop(on: shown, duration: 0.42))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tr("Přihlášeno", "Signed in")).font(.system(size: 15, weight: .medium))
+                Text(appleId).foregroundStyle(SW.muted).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .background(SW.greenTint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onAppear { shown = true }
+        .accessibilityElement(children: .combine)
     }
 }
 

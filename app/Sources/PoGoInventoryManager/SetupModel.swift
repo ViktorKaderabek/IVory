@@ -5,8 +5,8 @@ import Foundation
 // iPhone; a first run that can't connect brings it back. After that, a run that fails on the phone asks
 // whether to go through the guide again.
 //
-// A step that is met turns green and lights up Continue; the guide never moves on by itself, so there is
-// time to read. Steps already done (a valid sign-in, say) are skipped on the way forward. The two things
+// A step that is met turns green and lights up Continue; apart from a successful sign-in the guide never
+// moves on by itself, so there is time to read. Steps already done (a valid sign-in, say) are skipped on the way forward. The two things
 // IVory can't see from the Mac (UI Automation and trusting the developer) the user ticks.
 
 enum SetupPhase: Int, CaseIterable, Identifiable {
