@@ -121,7 +121,7 @@ index 0000000..d5eb555
 +
 +#define NSLog(...) IVoryLog(__VA_ARGS__)
 diff --git a/main.mm b/main.mm
-index a7496a7..10c3316 100644
+index a7496a7..645f7fc 100644
 --- a/main.mm
 +++ b/main.mm
 @@ -446,8 +446,6 @@ static BOOL performSign(NSString *appleID, NSString *password,
@@ -162,7 +162,7 @@ index a7496a7..10c3316 100644
                              NSLog(@"[Error] Failed to create certificate: %@", error);
                              dispatch_semaphore_signal(sem);
                              return;
-@@ -660,23 +662,28 @@ static BOOL performSign(NSString *appleID, NSString *password,
+@@ -660,23 +662,32 @@ static BOOL performSign(NSString *appleID, NSString *password,
                      }];
                  };
  
@@ -182,11 +182,11 @@ index a7496a7..10c3316 100644
 -                            }
 -                            createNewCert();
 -                        }];
--                    }
 +                // IVory: a certificate whose private key is on this Mac is reused. Otherwise a new one is
 +                // made – and only a certificate IVory itself made earlier (on a Mac whose key is gone) may
-+                // be revoked to make room. Certificates from Xcode, AltStore, Sideloadly or anyone else
-+                // are never touched: revoking them would break the apps they signed.
++                // be revoked to make room: named "IVory", or "AltSign Device", the name IVory 1.4.0 and
++                // plain altsign-cli gave theirs. Certificates from Xcode, AltStore, Sideloadly or anyone
++                // else are never touched: revoking them would break the apps they signed.
 +                ALTCertificate *reusable = nil;
 +                for (ALTCertificate *c in certs) {
 +                    NSData *savedKey = loadCertKey(c.identifier);
@@ -194,7 +194,10 @@ index a7496a7..10c3316 100644
 +                }
 +                ALTCertificate *ownStale = nil;
 +                for (ALTCertificate *c in certs) {
-+                    if ([c.machineName isEqualToString:@"IVory"]) { ownStale = c; break; }
++                    if ([c.machineName isEqualToString:@"IVory"] || [c.machineName isEqualToString:@"AltSign Device"]) {
++                        ownStale = c;
++                        break;
+                     }
 +                }
 +                if (reusable) {
 +                    NSLog(@"[Step 3] Reusing certificate %@ with its saved private key", reusable.identifier);
@@ -208,7 +211,7 @@ index a7496a7..10c3316 100644
                  } else {
                      createNewCert();
                  }
-@@ -700,7 +707,7 @@ static BOOL performList(NSString *appleID, NSString *password, NSString *teamID)
+@@ -700,7 +711,7 @@ static BOOL performList(NSString *appleID, NSString *password, NSString *teamID)
              dispatch_semaphore_signal(sem);
              return;
          }

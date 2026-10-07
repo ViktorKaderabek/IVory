@@ -9,7 +9,7 @@ build never depends on someone else's repository, and anyone can check the exact
 
 IVory's changes are all in [`altsign-cli.patch`](altsign-cli.patch), applied by `scripts/build_wda_runtime.sh`:
 
-- never revokes a development certificate it didn't make (only ones with the machine name *IVory*), and
+- never revokes a development certificate another program made (only its own: *IVory*, or *AltSign Device* from IVory 1.4.0), and
   picks the certificate it just created by its serial number;
 - puts the user's keychain search list back after signing instead of replacing it; random passwords for
   the throwaway signing keychain and `.p12`;

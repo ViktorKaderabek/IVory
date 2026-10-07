@@ -149,14 +149,14 @@ def sign_wda(udid, apple_id, out_dir):
         raise Fatal(T("Přihlášení k Apple vypršelo. Přihlas se znovu v Nastavení → iPhone.",
                       "The Apple sign-in expired. Sign in again in Settings → iPhone."), help="signin")
     if "IVORY_CERT_LIMIT" in r.stdout + r.stderr:
-        raise Fatal(T("Apple nevydal nový vývojářský certifikát: tvůj účet jich už má, kolik smí (třeba z Xcode, "
-                      "AltStore nebo Sideloadly). IVory cizí certifikáty neruší, aby nepřestaly fungovat aplikace "
-                      "podepsané jimi. Zruš jeden, který nepotřebuješ, na developer.apple.com → Certificates, "
-                      "nebo se přihlas jiným Apple ID.",
-                      "Apple didn't issue a new development certificate: your account already has as many as it may "
-                      "(from Xcode, AltStore or Sideloadly, say). IVory never revokes certificates it didn't make, so "
-                      "the apps they signed keep working. Revoke one you don't need at developer.apple.com → "
-                      "Certificates, or sign in with another Apple ID."), help="signin")
+        raise Fatal(T("Apple nevydal nový vývojářský certifikát: bezplatné Apple ID smí mít jen jeden a ten tvůj "
+                      "vytvořil jiný program (Xcode, AltStore nebo Sideloadly). IVory cizí certifikát neruší, aby "
+                      "aplikace podepsané jím fungovaly dál. Zruš ho v tom programu (v Xcode: Nastavení → Účty → "
+                      "Spravovat certifikáty), nebo se v IVory přihlas jiným Apple ID.",
+                      "Apple didn't issue a new development certificate: a free Apple ID may have only one, and yours "
+                      "was made by another program (Xcode, AltStore or Sideloadly). IVory never revokes someone else's "
+                      "certificate, so the apps it signed keep working. Revoke it in that program (in Xcode: Settings → "
+                      "Accounts → Manage Certificates), or sign in to IVory with another Apple ID."), help="signin")
     if r.returncode != 0 or not ipa.is_file():
         why = _altsign_error(r.stdout + r.stderr)
         raise Fatal(T("Nepodařilo se podepsat WebDriverAgent. Zkontroluj, že je Apple ID přihlášené "
