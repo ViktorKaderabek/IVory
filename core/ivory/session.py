@@ -1,35 +1,18 @@
-"""Connecting to the iPhone through Appium / WebDriverAgent and keeping the game running."""
-import re
+"""Connecting to the iPhone through Appium / WebDriverAgent and keeping the game running.
+
+WebDriverAgent is started by wda.py (no Xcode) and Appium is handed the finished URL, so it never
+builds or signs anything itself.
+"""
 import time
 
 from . import config as cfg
 from .errors import Fatal, NotAuthorized, StepError
 from .output import emit, log, short_err, step, T
+from .phone import list_devices
+from .wda import explain_wda_error
 from .read_box import safe_button
 from .read_box import BOX_STATES
 from .screens import classify
-
-
-def _run(cmd):
-    import subprocess
-    try:
-        return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=20).stdout
-    except Exception:
-        return ""
-
-
-def list_devices():
-    """Connected iPhones (not simulators): [(name, iOS, UDID)]."""
-    out = _run("xcrun xctrace list devices 2>/dev/null")
-    section, found = "", []
-    for line in out.splitlines():
-        if line.startswith("=="):
-            section = line
-            continue
-        m = re.match(r"^(.*) \(([\d.]+)\) \(([0-9A-Fa-f-]{20,})\)$", line.strip())
-        if m and "Simulator" not in section and "Simulator" not in line:
-            found.append((m.group(1), m.group(2), m.group(3)))
-    return found
 
 
 def detect_udid():
@@ -37,15 +20,9 @@ def detect_udid():
     devs = list_devices()
     if not devs:
         raise Fatal(T("Nevidím připojený iPhone. Připoj ho kabelem, odemkni a potvrď „Důvěřovat tomuto počítači“.",
-                      "No iPhone connected. Connect it with a cable, unlock it and tap “Trust This Computer”."))
+                      "No iPhone connected. Connect it with a cable, unlock it and tap “Trust This Computer”."),
+                    help="pair")
     return devs[0][2]
-
-
-def detect_team_id():
-    """Apple Team ID from the "Apple Development" certificate in the Keychain (the OU field)."""
-    out = _run("security find-certificate -c 'Apple Development' -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null")
-    m = re.search(r"OU\s*=\s*([A-Z0-9]{10})", out)
-    return m.group(1) if m else ""
 
 
 def not_authorized(e):
@@ -55,7 +32,7 @@ def not_authorized(e):
     return "not authorized" in low or "xctdaemonerrordomain code=41" in low
 
 
-def connect(udid, fresh_wda=False):
+def connect(udid, wda_url):
     from appium import webdriver
     from appium.options.ios import XCUITestOptions
 
@@ -66,24 +43,14 @@ def connect(udid, fresh_wda=False):
     o.automation_name = "XCUITest"
     o.no_reset = True
     o.new_command_timeout = 600
-    team = cfg.TEAM_ID or detect_team_id()
-    if team:
-        o.xcode_org_id = team
-        o.xcode_signing_id = cfg.SIGNING_ID
-    else:
-        log(T("   (Apple Team ID nevím – když se WebDriverAgent nepodepíše, doplň ho v nastavení)",
-              "   (Apple Team ID unknown – if WebDriverAgent fails to sign, fill it in the settings)"))
+    # The one capability that keeps Xcode out of the run: with a WebDriverAgent already running,
+    # Appium attaches to it instead of reaching for xcodebuild to build and sign its own.
+    o.set_capability("webDriverAgentUrl", wda_url)
+    o.set_capability("skipLogCapture", True)       # log capture would want the system device tooling
     o.set_capability("waitForIdleTimeout", 0)
-    o.set_capability("wdaLaunchTimeout", 240000)   # the first WebDriverAgent build can take a few minutes
-    if fresh_wda:
-        o.set_capability("useNewWDA", True)        # delete the old WebDriverAgent from the iPhone and start a new one
     try:
         driver = webdriver.Remote(cfg.APPIUM_URL, options=o)
     except Exception as e:
-        # The iPhone usually refuses control while the session is being made, not after – that is
-        # where a WebDriverAgent left hanging from the last run shows up. It used to be noticed only
-        # on the check further down, so the caller never got as far as starting WebDriverAgent fresh
-        # and the run stopped on the raw error instead.
         if not_authorized(e):
             raise NotAuthorized(short_err(e))
         raise
@@ -108,25 +75,15 @@ def connect(udid, fresh_wda=False):
     return driver
 
 
-def open_session(udid):
-    """Connects to the iPhone. If the iPhone refuses control (typically a WebDriverAgent left hanging
-    from the previous run), starts WebDriverAgent fresh and tries again."""
+def open_session(udid, wda_url):
+    """Connects to the WebDriverAgent wda.py started."""
     try:
-        return connect(udid)
+        return connect(udid, wda_url)
     except NotAuthorized:
-        log(T("   iPhone ovládání odmítl („Not authorized for performing UI testing actions“).",
-              "   The iPhone refused control (“Not authorized for performing UI testing actions”)."))
-        log(T("   Nejčastěji na něm zůstal viset WebDriverAgent z minula – spouštím ho načisto (chvíli to trvá)...",
-              "   Usually a WebDriverAgent from last time is stuck on it – starting it fresh (takes a while)..."))
-        step(T("Spouštím WebDriverAgent na iPhonu načisto (může to trvat i 2 minuty)",
-               "Starting WebDriverAgent on the iPhone fresh (can take up to 2 minutes)"))
-        try:
-            return connect(udid, fresh_wda=True)
-        except NotAuthorized:
-            raise Fatal(T("iPhone nepovolil ovládání. Odemkni ho a na iPhonu zapni Nastavení → Vývojář → "
-                          "„Enable UI Automation“ (automatizace UI). Pak spusť znovu.",
-                          "The iPhone doesn't allow control. Unlock it and turn on Settings → Developer → "
-                          "“Enable UI Automation”. Then run again."))
+        raise Fatal(T("iPhone nepovolil ovládání. Odemkni ho a na iPhonu zapni Nastavení → Vývojář → "
+                      "„Enable UI Automation“ (automatizace UI). Pak spusť znovu.",
+                      "The iPhone doesn't allow control. Unlock it and turn on Settings → Developer → "
+                      "“Enable UI Automation”. Then run again."), help="uiauto")
 
 
 def explain_connect_error(e):
@@ -135,28 +92,16 @@ def explain_connect_error(e):
     if any(w in low for w in ("connection refused", "max retries exceeded", "failed to establish", "newconnectionerror")):
         return T("Appium server neběží, nedá se k němu připojit. Spusť to znovu; podrobnosti jsou v ~/.pogo/appium.log.",
                  "The Appium server isn't running. Run again; details are in ~/.pogo/appium.log.")
-    if "developer mode" in low:
-        return T("Na iPhonu zapni Režim pro vývojáře (Nastavení → Soukromí a zabezpečení → Režim pro vývojáře).",
-                 "Turn on Developer Mode on the iPhone (Settings → Privacy & Security → Developer Mode).")
-    if any(w in low for w in ("xcodebuild failed", "code 65", "signing", "provisioning", "certificate")):
-        return T("Nepodařilo se sestavit nebo podepsat WebDriverAgent (pomocnou aplikaci, přes kterou bot ovládá iPhone). "
-                 "Zkontroluj Apple Team ID v nastavení a účet v Xcode (Settings → Accounts). Na iPhonu potvrď důvěru "
-                 "vývojáři: Nastavení → Obecné → Správa VPN a zařízení.",
-                 "Couldn't build or sign WebDriverAgent (the helper app the bot controls the iPhone with). "
-                 "Check the Apple Team ID in the settings and your account in Xcode (Settings → Accounts). On the iPhone, "
-                 "trust the developer: Settings → General → VPN & Device Management.")
     if "unknown device" in low or ("udid" in low and "not" in low) or "could not find a device" in low:
         return T("iPhone se nenašel. Připoj ho kabelem, odemkni, potvrď „Důvěřovat“ a zkontroluj iPhone v nastavení aplikace.",
                  "iPhone not found. Connect it with a cable, unlock it, tap “Trust” and check the iPhone in the app settings.")
     if not_authorized(e):
-        return T("iPhone nepovolil ovládání. Odemkni ho a zapni na něm Nastavení → Vývojář → „Enable UI Automation“. "
-                 "Když tam ta volba není, připoj iPhone k Macu, otevři Xcode a chvíli počkej, než se zařízení připraví.",
-                 "The iPhone refused control. Unlock it and turn on Settings → Developer → “Enable UI Automation”. "
-                 "If there is no such switch, connect the iPhone to the Mac, open Xcode and wait for it to finish "
-                 "preparing the device.")
+        return T("iPhone nepovolil ovládání. Odemkni ho a zapni na něm Nastavení → Vývojář → „Enable UI Automation“.",
+                 "The iPhone refused control. Unlock it and turn on Settings → Developer → “Enable UI Automation”.")
     if "locked" in low or "passcode" in low:
         return T("iPhone je zamčený. Odemkni ho a spusť znovu.", "The iPhone is locked. Unlock it and run again.")
-    return T(f"Nepodařilo se připojit k iPhonu: {short_err(e)}", f"Couldn't connect to the iPhone: {short_err(e)}")
+    text, _help = explain_wda_error(e)
+    return text
 
 
 def session_alive(driver):
@@ -174,9 +119,16 @@ def reconnect(bot):
         bot.d.quit()
     except Exception:
         pass
-    for _ in range(3):
+    for attempt in range(3):
+        if attempt == 1:
+            # The phone usually drops the whole WebDriverAgent with the connection, so another try
+            # would keep talking to a port nobody listens on any more. A WebDriverAgent that won't
+            # come back ends the run (its Fatal says why).
+            log(T("   startuji WebDriverAgent znovu...", "   starting WebDriverAgent again..."))
+            bot.wda.stop()
+            bot.wda.start()
         try:
-            bot.d = open_session(bot.udid)
+            bot.d = open_session(bot.udid, bot.wda.url)
             bot.refresh()
             return
         except Fatal:

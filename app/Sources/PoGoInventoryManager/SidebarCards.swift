@@ -126,8 +126,10 @@ struct RunControlCard: View {
     private var startButton: some View {
         Button {
             guard !runner.isRunning, store.config.steps.count > 0 else { return }
-            store.prepareRun()
-            runner.start(steps: store.config.steps, fresh: false)
+            SetupFlow.shared.beforeStart {
+                store.prepareRun()
+                runner.start(steps: store.config.steps, fresh: false)
+            }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: runner.outcome == nil ? "play.fill" : "arrow.clockwise")

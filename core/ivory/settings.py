@@ -18,8 +18,7 @@ def load_config():
         return
     cfg.LANG = "cs" if str(c.get("language") or "").strip().lower() == "cs" else "en"
     cfg.UDID = str(c.get("udid") or "").strip()
-    cfg.TEAM_ID = str(c.get("team_id") or "").strip()
-    cfg.SIGNING_ID = c.get("signing_id") or cfg.SIGNING_ID
+    cfg.APPLE_ID = str(c.get("apple_id") or "").strip()
     cfg.SEARCH_QUERY = " ".join(str(c.get("search_query") or "").split()) or cfg.SEARCH_QUERY
     cfg.TAG_NAME = str(c.get("remove_tag") or "").strip() or cfg.TAG_NAME
     cfg.TAG_COLOR = cfg.color_name(c.get("remove_tag_color"), cfg.TAG_COLOR)

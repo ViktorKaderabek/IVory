@@ -126,6 +126,16 @@ final class Updater: ObservableObject {
         guard latest.draft != true, latest.prerelease != true,
               let asset = latest.assets.first(where: { $0.name == assetName }) else { return nil }
         let version = latest.tag_name.hasPrefix("v") ? String(latest.tag_name.dropFirst()) : latest.tag_name
+        // Only a release asset of this very repository, over HTTPS: an update is code that will run with
+        // the user's Apple ID session, so it must not come from anywhere a changed API answer points to.
+        let url = asset.browser_download_url
+        #if DEBUG
+        let localTest = ProcessInfo.processInfo.environment["IVORY_UPDATE_FEED"] != nil   // the end-to-end test
+        #else
+        let localTest = false
+        #endif
+        guard localTest || (url.scheme == "https" && url.host == "github.com"
+                            && url.path.lowercased().hasPrefix("/\(repo.lowercased())/releases/download/")) else { return nil }
         let sha = asset.digest.flatMap { $0.hasPrefix("sha256:") ? String($0.dropFirst(7)) : nil }
         return Release(version: version, notesURL: latest.html_url, dmgURL: asset.browser_download_url, sha256: sha)
     }
@@ -149,17 +159,18 @@ final class Updater: ObservableObject {
         downloadTask = Task {
             defer { downloadTask = nil }
             do {
+                // No checksum, no install: a release without GitHub's digest can't be told from a broken
+                // or swapped download.
+                guard let expected = release.sha256 else { throw UpdateError.noChecksum }
                 let file = try await Self.fetch(release.dmgURL, version: release.version) { progress in
                     Task { @MainActor in
                         if case .downloading = Updater.shared.state { Updater.shared.state = .downloading(release, progress) }
                     }
                 }
-                if let expected = release.sha256 {
-                    let digest = SHA256.hash(data: try Data(contentsOf: file)).map { String(format: "%02x", $0) }.joined()
-                    guard digest == expected.lowercased() else {
-                        try? FileManager.default.removeItem(at: file)
-                        throw UpdateError.checksum
-                    }
+                let digest = SHA256.hash(data: try Data(contentsOf: file)).map { String(format: "%02x", $0) }.joined()
+                guard digest == expected.lowercased() else {
+                    try? FileManager.default.removeItem(at: file)
+                    throw UpdateError.checksum
                 }
                 state = .ready(release, file)
                 #if DEBUG
@@ -264,6 +275,13 @@ final class Updater: ObservableObject {
         guard Bundle(url: app)?.bundleIdentifier == Bundle.main.bundleIdentifier else { throw UpdateError.badPackage }
         try? FileManager.default.removeItem(at: next)
         try run("/usr/bin/ditto", [app.path, next.path])
+        // Its signature has to cover every file, the signing tool and the Python core included.
+        do {
+            try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", next.path])
+        } catch {
+            try? FileManager.default.removeItem(at: next)
+            throw UpdateError.badPackage
+        }
         return next
     }
 
@@ -281,15 +299,18 @@ final class Updater: ObservableObject {
     }
 
     enum UpdateError: Error {
-        case checksum, badPackage, tool(String)
+        case checksum, noChecksum, badPackage, tool(String)
     }
 
     private static func describe(_ error: Error) -> String {
         switch error {
         case UpdateError.checksum:
             return tr("Stažený soubor nesedí s otiskem vydání. Zkus to znovu.", "The download doesn't match the release checksum. Try again.")
+        case UpdateError.noChecksum:
+            return tr("Vydání nemá otisk, tak ho neinstaluji. Stáhni ho ručně z GitHubu.",
+                      "The release has no checksum, so it won't be installed. Download it by hand from GitHub.")
         case UpdateError.badPackage:
-            return tr("V DMG není IVory.", "The DMG doesn't contain IVory.")
+            return tr("V DMG není neporušená IVory.", "The DMG doesn't contain an intact IVory.")
         case UpdateError.tool(let name):
             return tr("Instalace selhala (\(name)).", "Installing failed (\(name)).")
         case let e as URLError where [.notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotFindHost].contains(e.code):

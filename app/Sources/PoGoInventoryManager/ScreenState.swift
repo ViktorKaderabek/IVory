@@ -92,6 +92,5 @@ final class DeviceState: ObservableObject {
     @Published var devices: [DeviceTools.Device] = []
     @Published var message: String?
     @Published var messageKind = Kind.info
-    @Published var proposedTeam: String?
     @Published var busy = false
 }

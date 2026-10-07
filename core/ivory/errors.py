@@ -40,7 +40,15 @@ class NoNavigation(StepError):
 
 
 class Fatal(Exception):
-    """The run can't continue (a tag can't be created, the search can't be entered, the connection...)."""
+    """The run can't continue (a tag can't be created, the search can't be entered, the connection...).
+
+    `help` names the setup step the cause points back to, when it is one: "uiauto", "trust", "devmode",
+    "pair" or "signin".
+    """
+
+    def __init__(self, message="", help=None):
+        super().__init__(message)
+        self.help = help
 
 
 class NotAuthorized(Exception):

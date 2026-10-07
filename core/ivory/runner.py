@@ -7,7 +7,9 @@ from . import config as cfg
 from .errors import Fatal
 from .output import emit, log, short_err, step, T
 from .device import Bot, SAVER
-from .session import detect_udid, explain_connect_error, list_devices, open_session
+from .phone import developer_mode_on, ios_too_old, list_devices, reveal_developer_mode
+from .session import detect_udid, explain_connect_error, open_session
+from .wda import ensure_wda
 from .records import Book, Memory
 from .report import Report
 from .settings import load_config
@@ -38,6 +40,13 @@ def stop_signals():
         signal.signal(signal.SIGTERM, stop)
     except ValueError:
         pass                                   # not in the main thread (tests)
+
+
+def _close_wda(wda):
+    """Takes down the tunnel, the XCUITest runner and the port forwards. Left running they would
+    hold the phone's testmanagerd and the next run would find the ports taken."""
+    if wda is not None:
+        wda.stop()
 
 
 def main():
@@ -82,6 +91,7 @@ def main():
     emit("phase", n=0)
     step(T("Připojuji se k iPhonu", "Connecting to the iPhone"))
     log(T("Připojuji se k iPhonu...", "Connecting to the iPhone..."))
+    wda = None
     try:
         devs = list_devices()
         udid = cfg.UDID or (devs[0][2] if devs else detect_udid())
@@ -89,22 +99,36 @@ def main():
         if dev:
             log(f"   iPhone: {dev[0]} (iOS {dev[1]})")
             emit("device", name=dev[0], ios=dev[1])
-        step(T("Spouštím ovládání iPhonu (WebDriverAgent) – napoprvé to trvá pár minut",
-               "Starting iPhone control (WebDriverAgent) – the first time takes a few minutes"))
-        driver = open_session(udid)
+            if ios_too_old(dev[1]):
+                raise Fatal(T(f"iPhone má iOS {dev[1]}, IVory potřebuje 17.4 nebo novější. "
+                              f"Aktualizuj ho v Nastavení → Obecné → Aktualizace softwaru.",
+                              f"The iPhone runs iOS {dev[1]}, IVory needs 17.4 or newer. "
+                              f"Update it in Settings → General → Software Update."))
+        if not developer_mode_on(udid):
+            reveal_developer_mode(udid)          # makes the switch appear in Settings
+            raise Fatal(T("Na iPhonu zapni Režim pro vývojáře: Nastavení → Soukromí a zabezpečení → "
+                          "Režim pro vývojáře. Telefon se restartuje, pak spusť IVory znovu.",
+                          "Turn on Developer Mode on the iPhone: Settings → Privacy & Security → "
+                          "Developer Mode. The phone restarts; then start IVory again."), help="devmode")
+        wda, wda_url = ensure_wda(udid, cfg.APPLE_ID, on_step=step)
+        driver = open_session(udid, wda_url)
         bot = Bot(driver, run_dir)
+        bot.wda = wda
     except Fatal as e:
         log(T(f"\nKONEC: {e}", f"\nEND: {e}"))
-        emit("fatal", text=str(e))
+        emit("fatal", text=str(e), help=e.help)
+        _close_wda(wda)
         return 1
     except KeyboardInterrupt:
         log(T("\nZastaveno ještě před připojením k iPhonu.", "\nStopped before connecting to the iPhone."))
+        _close_wda(wda)
         return 130
     except Exception as e:
         msg = explain_connect_error(e)
         log(f"\n{msg}")
         log(T(f"   (technicky: {short_err(e)})", f"   (technical: {short_err(e)})"))
         emit("fatal", text=msg)
+        _close_wda(wda)
         return 1
     bot.udid = udid
     emit("connected")
@@ -144,5 +168,6 @@ def main():
                 bot.d.quit()
             except Exception:
                 pass
+            _close_wda(wda)
             SAVER.shutdown(wait=True)
     return rc

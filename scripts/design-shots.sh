@@ -34,6 +34,20 @@ STATES=(
   "10-settings|IVORY_PREVIEW=none IVORY_PAGE=settings"
   "11-banner|IVORY_PREVIEW=none IVORY_BANNER=1"
   "12-firststart|IVORY_PREVIEW=none IVORY_SHOTS_CONSENT=1"
+  # the setup guide (Setup.swift), one picture per screen of "Setup Guide"
+  "20-setup-connect|IVORY_PREVIEW=none IVORY_SETUP=connect"
+  "21-setup-connect-ok|IVORY_PREVIEW=none IVORY_SETUP=connect-ok"
+  "23-setup-devmode|IVORY_PREVIEW=none IVORY_SETUP=devmode"
+  "24-setup-devmode-missing|IVORY_PREVIEW=none IVORY_SETUP=devmode-missing"
+  "25-setup-devmode-restart|IVORY_PREVIEW=none IVORY_SETUP=devmode-restart"
+  "26-setup-uiauto|IVORY_PREVIEW=none IVORY_SETUP=uiauto"
+  "27-setup-appleid|IVORY_PREVIEW=none IVORY_SETUP=appleid"
+  "28-setup-appleid-error|IVORY_PREVIEW=none IVORY_SETUP=appleid-error"
+  "29-setup-appleid-code|IVORY_PREVIEW=none IVORY_SETUP=appleid-code"
+  "30-setup-install|IVORY_PREVIEW=none IVORY_SETUP=install"
+  "31-setup-helper|IVORY_PREVIEW=none IVORY_SETUP=helper"
+  "32-setup-trustdev|IVORY_PREVIEW=none IVORY_SETUP=trustdev"
+  "33-setup-ready|IVORY_PREVIEW=none IVORY_SETUP=ready"
 )
 
 

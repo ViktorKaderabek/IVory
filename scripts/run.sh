@@ -1,13 +1,16 @@
 #!/bin/bash
 # =====================================================================
 #  IVory – launcher
-#  Checks Xcode, downloads and sets up everything else on the first run
-#  (Node.js, Appium + XCUITest driver, Python with libraries), starts the
-#  Appium server and the bot. Used by both the app and Terminal.
+#  Downloads and sets up everything on the first run (Node.js, Appium + XCUITest
+#  driver, Python with libraries), starts the Appium server and the bot. Used by
+#  both the app and Terminal. Nothing here needs Xcode: WebDriverAgent ships
+#  prebuilt and core/ivory/wda.py signs, installs and starts it.
 #
 #    bash scripts/run.sh                                   # duplicates + IV tags
 #    bash scripts/run.sh --steps duplicates,iv,pvp,rename,battle,weak  # any steps
 #    bash scripts/run.sh --fresh                           # don't use IVs from memory
+#    bash scripts/run.sh --prepare                         # only download and set up (the app's
+#                                                          # setup guide), with "@@" progress events
 #
 #  Whatever the system lacks is downloaded into ~/.pogo/runtime (no Homebrew, no password).
 #  Node.js / Appium installed from Homebrew are used when they are already there.
@@ -54,14 +57,48 @@ else
   defaults read -g AppleLanguages 2>/dev/null | sed -n 2p | grep -q '"*cs' && UI_LANG=cs
 fi
 t() { if [ "$UI_LANG" = cs ]; then printf '%s' "$1"; else printf '%s' "$2"; fi; }
-say() { printf '\n▶ %s\n' "$*"; }
-die() { printf '\n✖ %s\n' "$*"; exit 1; }
+# --prepare: the app's setup guide runs only the downloads and the installs, and draws its checklist
+# from "@@" events. A normal run prints the same steps as text.
+PREP=0
+[ "${1:-}" = "--prepare" ] && PREP=1
+CUR=""
+jstr() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+ev() {     # ev ID STATE [EXTRA_JSON]
+  [ "$PREP" = 1 ] || return 0
+  [ "$2" = start ] && CUR="$1"
+  printf '@@{"e":"prep","id":"%s","state":"%s"%s}\n' "$1" "$2" "${3:-}"
+}
 
-fetch() {  # fetch URL FILE SHA256 – downloads into ~/.pogo/runtime/downloads and verifies the checksum
-  local url="$1" file="$RT/downloads/$2" sha="$3"
+say() { printf '\n▶ %s\n' "$*"; }
+die() {
+  [ "$PREP" = 1 ] && printf '@@{"e":"prep","id":"%s","state":"fail","text":"%s"}\n' "$CUR" "$(jstr "$*")"
+  printf '\n✖ %s\n' "$*"; exit 1
+}
+
+fetch() {  # fetch URL FILE SHA256 [EVENT_ID] – downloads into ~/.pogo/runtime/downloads and verifies the checksum
+  local url="$1" file="$RT/downloads/$2" sha="$3" id="${4:-}"
+  local failed
+  failed="$(t "Stažení $2 selhalo. Zkontroluj připojení k internetu." "Downloading $2 failed. Check your internet connection.")"
   mkdir -p "$RT/downloads"
   if [ -f "$file" ] && [ "$(shasum -a 256 "$file" | cut -d' ' -f1)" = "$sha" ]; then return 0; fi
-  curl -fL --retry 3 -sS -o "$file.part" "$url" || die "$(t "Stažení $2 selhalo. Zkontroluj připojení k internetu." "Downloading $2 failed. Check your internet connection.")"
+  if [ "$PREP" = 1 ] && [ -n "$id" ]; then
+    # The guide shows the download in MB: curl runs in the background and the file is measured as it grows.
+    local total have pid
+    total="$(curl -fsSIL "$url" 2>/dev/null | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n+0}')"
+    curl -fL --retry 3 -sS -o "$file.part" "$url" &
+    pid=$!
+    # The app stops the preparation with SIGINT, which a background job ignores.
+    trap 'kill "$pid" 2>/dev/null' EXIT INT TERM
+    while kill -0 "$pid" 2>/dev/null; do
+      have="$(stat -f%z "$file.part" 2>/dev/null || echo 0)"
+      ev "$id" progress ",\"done\":$have,\"total\":$total"
+      sleep 0.5
+    done
+    wait "$pid" || die "$failed"
+    trap - EXIT INT TERM
+  else
+    curl -fL --retry 3 -sS -o "$file.part" "$url" || die "$failed"
+  fi
   if [ "$(shasum -a 256 "$file.part" | cut -d' ' -f1)" != "$sha" ]; then
     rm -f "$file.part"
     die "$(t "Kontrolní součet $2 nesedí." "Checksum of $2 doesn't match.")"
@@ -76,24 +113,11 @@ unpack() {  # unpack ARCHIVE TARGET DIR_IN_ARCHIVE – extracts into ~/.pogo/run
   mv "$tmp/$3" "$RT/$2" && rm -rf "$tmp" "$RT/downloads/$1"
 }
 
-# --- 1) Xcode (the only thing that can't be downloaded) -------------------
-if ! xcodebuild -version >/dev/null 2>&1; then
-  # Xcode is installed but only the Command Line Tools are selected: use it without sudo
-  for x in /Applications/Xcode.app /Applications/Xcode-beta.app; do
-    [ -d "$x/Contents/Developer" ] && export DEVELOPER_DIR="$x/Contents/Developer" && break
-  done
-fi
-xcodebuild -version >/dev/null 2>&1 || die "$(t \
-  "Chybí Xcode. Nainstaluj ho z App Store (https://apps.apple.com/app/xcode/id497799835), jednou ho otevři a pak spusť IVory znovu." \
-  "Xcode is missing. Install it from the App Store (https://apps.apple.com/app/xcode/id497799835), open it once, then start IVory again.")"
-xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1 || die "$(t \
-  "Xcode ještě není připravený: otevři ho jednou, nech doinstalovat součásti a pak spusť IVory znovu." \
-  "Xcode isn't set up yet: open it once, let it install its components, then start IVory again.")"
-
-# --- 1b) Consent to the risk notice (shared with the window in the app) ---
+# --- 1) Consent to the risk notice (shared with the window in the app) ---
 CONSENT_VERSION=1   # same number as Consent.version in app/Sources/PoGoInventoryManager/Consent.swift
 CFG="$WORK/config.json"
-HAVE="$(xcrun python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("consent_version") or 0))' "$CFG" 2>/dev/null || echo 0)"
+HAVE="$(sed -n 's/.*"consent_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$CFG" 2>/dev/null | head -1)"
+HAVE="${HAVE:-0}"
 if [ "$HAVE" -lt "$CONSENT_VERSION" ]; then
   [ -t 0 ] || die "$(t "Nejdřív otevři aplikaci IVory a potvrď upozornění na rizika." \
                        "Open the IVory app first and confirm the risk notice.")"
@@ -136,31 +160,41 @@ TXT
     souhlasím|Souhlasím|SOUHLASÍM|souhlasim|Souhlasim|SOUHLASIM|"I agree"|"i agree"|"I AGREE") ;;
     *) die "$(t "Bez souhlasu IVory nespustím." "IVory won't start without your consent.")" ;;
   esac
-  PLIST="$HERE/../../Info.plist"; [ -f "$PLIST" ] || PLIST="$HERE/../app/Info.plist"
-  APP_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST" 2>/dev/null || echo dev)"
-  xcrun python3 - "$CFG" "$CONSENT_VERSION" "$APP_VERSION" <<'PY' || die "$(t "Souhlas se nepodařilo uložit." "Couldn't save the consent.")"
-import json, sys, datetime, os
-path, version, app = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-try:
-    cfg = json.load(open(path))
-except (OSError, ValueError):
-    cfg = {}
-cfg.update(consent_version=version, app_version=app,
-           consent_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
-os.makedirs(os.path.dirname(path), exist_ok=True)
-with open(path + ".tmp", "w") as f:
-    json.dump(cfg, f, indent=2, sort_keys=True, ensure_ascii=False)
-os.replace(path + ".tmp", path)
-PY
-  say "$(t "Souhlas uložen." "Consent saved.")"
+  SAVE_CONSENT=1
 fi
 
-# --- 2) Node.js and Appium -----------------------------------------------
+# --- 2) Python environment -----------------------------------------------
+# First, because the setup guide asks the iPhone about Developer Mode through pymobiledevice3 while
+# the rest is still downloading.
+ev python start
+if [ ! -x "$VENV/bin/python" ]; then
+  if [ ! -x "$RT/python/bin/python3" ]; then
+    say "$(t "Stahuji Python $PY_VERSION (jen poprvé)..." "Downloading Python $PY_VERSION (first run only)...")"
+    fetch "https://github.com/astral-sh/python-build-standalone/releases/download/$PY_RELEASE/${PY_PKG/+/%2B}.tar.gz" \
+      "$PY_PKG.tar.gz" "$PY_SHA" python
+    unpack "$PY_PKG.tar.gz" python python
+  fi
+  say "$(t "Vytvářím Python prostředí (jen poprvé)..." "Creating the Python environment (first run only)...")"
+  "$RT/python/bin/python3" -m venv "$VENV" || die "$(t "Nepodařilo se vytvořit Python prostředí." "Couldn't create the Python environment.")"
+fi
+ev python done
+ev devtools start
+if ! "$VENV/bin/python" -c "import pymobiledevice3" >/dev/null 2>&1; then
+  say "$(t "Instaluji nástroje pro iPhone (jen poprvé)..." "Installing the iPhone tools (first run only)...")"
+  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --upgrade pip
+  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --prefer-binary \
+    "$(grep -i '^pymobiledevice3' "$CORE/requirements.txt")" \
+    || die "$(t "Instalace nástrojů pro iPhone selhala." "Installing the iPhone tools failed.")"
+fi
+ev devtools done
+
+# --- 3) Node.js and Appium -----------------------------------------------
+ev appium start
 [ -x "$RT/node/bin/node" ] && export PATH="$RT/node/bin:$PATH"
 own_node() {
   if [ ! -x "$RT/node/bin/node" ]; then
     say "$(t "Stahuji Node.js $NODE_VERSION (jen poprvé)..." "Downloading Node.js $NODE_VERSION (first run only)...")"
-    fetch "https://nodejs.org/dist/v$NODE_VERSION/$NODE_PKG.tar.gz" "$NODE_PKG.tar.gz" "$NODE_SHA"
+    fetch "https://nodejs.org/dist/v$NODE_VERSION/$NODE_PKG.tar.gz" "$NODE_PKG.tar.gz" "$NODE_SHA" appium
     unpack "$NODE_PKG.tar.gz" node "$NODE_PKG"
   fi
   export PATH="$RT/node/bin:$PATH"
@@ -180,29 +214,51 @@ if ! appium driver list --installed 2>&1 | grep -qi xcuitest; then
   appium driver install --source=npm "appium-xcuitest-driver@$XCUITEST_VERSION" \
     || die "$(t "Instalace XCUITest driveru selhala." "Installing the XCUITest driver failed.")"
 fi
+ev appium done
 
-# --- 3) Python environment -----------------------------------------------
-if [ ! -x "$VENV/bin/python" ]; then
-  if [ ! -x "$RT/python/bin/python3" ]; then
-    say "$(t "Stahuji Python $PY_VERSION (jen poprvé)..." "Downloading Python $PY_VERSION (first run only)...")"
-    fetch "https://github.com/astral-sh/python-build-standalone/releases/download/$PY_RELEASE/${PY_PKG/+/%2B}.tar.gz" \
-      "$PY_PKG.tar.gz" "$PY_SHA"
-    unpack "$PY_PKG.tar.gz" python python
-  fi
-  say "$(t "Vytvářím Python prostředí (jen poprvé)..." "Creating the Python environment (first run only)...")"
-  "$RT/python/bin/python3" -m venv "$VENV" || die "$(t "Nepodařilo se vytvořit Python prostředí." "Couldn't create the Python environment.")"
-fi
-if ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation" >/dev/null 2>&1; then
+# --- 4) The rest of the Python libraries (image recognition, Appium client) ----
+ev libs start
+if ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation, pymobiledevice3" >/dev/null 2>&1; then
   say "$(t "Instaluji Python knihovny (jen poprvé, pár minut)..." "Installing Python libraries (first run only, a few minutes)...")"
   "$VENV/bin/python" -m pip install -q --disable-pip-version-check --upgrade pip
   "$VENV/bin/python" -m pip install -q --disable-pip-version-check --prefer-binary -r "$CORE/requirements.txt" \
     || die "$(t "Instalace Python knihoven selhala." "Installing the Python libraries failed.")"
 fi
+ev libs done
 
-# --- 3b) Game data (PvPoke + PokeMiners) ----------------------------------
+# --- 5) Remember the consent (needs the Python installed just above) ----
+if [ "${SAVE_CONSENT:-0}" = 1 ]; then
+  PLIST="$HERE/../../Info.plist"; [ -f "$PLIST" ] || PLIST="$HERE/../app/Info.plist"
+  APP_VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST" 2>/dev/null || echo dev)"
+  "$VENV/bin/python" - "$CFG" "$CONSENT_VERSION" "$APP_VERSION" <<'PY' || die "$(t "Souhlas se nepodařilo uložit." "Couldn't save the consent.")"
+import json, sys, datetime, os
+path, version, app = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+try:
+    cfg = json.load(open(path))
+except (OSError, ValueError):
+    cfg = {}
+cfg.update(consent_version=version, app_version=app,
+           consent_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+os.makedirs(os.path.dirname(path), exist_ok=True)
+with open(path + ".tmp", "w") as f:
+    json.dump(cfg, f, indent=2, sort_keys=True, ensure_ascii=False)
+os.replace(path + ".tmp", path)
+PY
+  say "$(t "Souhlas uložen." "Consent saved.")"
+fi
+
+# --- 6) Apple sign-in (Terminal only; the app has its own screen) ------
+# WebDriverAgent has to be signed with the phone owner's Apple ID, so ask once, the first time.
+# Only when nothing is configured yet: every later run goes straight to the bot.
+if [ -t 0 ] && ! grep -Eq '"apple_id"[[:space:]]*:[[:space:]]*"[^"]+"' "$CFG" 2>/dev/null; then
+  "$VENV/bin/python" "$CORE/signin.py" || true
+fi
+
+# --- 7) Game data (PvPoke + PokeMiners) ----------------------------------
 # Not part of IVory: downloaded into ~/.pogo/pokedata.json and refreshed once a week (new Pokémon),
 # or right away when a copy from an older IVory lacks the Battle data. An old copy is enough when the refresh fails.
 DATA="$WORK/pokedata.json"
+ev gamedata start
 if [ ! -f "$DATA" ] || [ -n "$(find "$DATA" -mtime +6)" ] || ! grep -q '"battle"' "$DATA"; then
   say "$(t "Stahuji herní data (PvPoke, PokeMiners)..." "Downloading the game data (PvPoke, PokeMiners)...")"
   if ! "$VENV/bin/python" "$CORE/pokedata.py"; then
@@ -211,8 +267,10 @@ if [ ! -f "$DATA" ] || [ -n "$(find "$DATA" -mtime +6)" ] || ! grep -q '"battle"
     say "$(t "Herní data se nepodařilo obnovit, použiji uložená." "Couldn't refresh the game data, using the saved copy.")"
   fi
 fi
+ev gamedata done
+[ "$PREP" = 1 ] && exit 0
 
-# --- 4) Appium server ----------------------------------------------------
+# --- 8) Appium server ----------------------------------------------------
 APPIUM_PID=""
 cleanup() { [ -n "$APPIUM_PID" ] && kill "$APPIUM_PID" 2>/dev/null; }
 trap cleanup EXIT
@@ -220,7 +278,9 @@ if curl -s "http://127.0.0.1:$PORT/status" >/dev/null 2>&1; then
   say "$(t "Appium už běží, použiji ho." "Appium is already running, using it.")"
 else
   say "$(t "Spouštím Appium server..." "Starting the Appium server...")"
-  appium --port "$PORT" > "$WORK/appium.log" 2>&1 &
+  # Loopback only: by default Appium listens on every interface, and anyone on the same network could
+  # open a session and drive the iPhone through the WebDriverAgent IVory starts.
+  appium --address 127.0.0.1 --port "$PORT" > "$WORK/appium.log" 2>&1 &
   APPIUM_PID=$!
   for i in $(seq 1 40); do
     curl -s "http://127.0.0.1:$PORT/status" >/dev/null 2>&1 && break
@@ -229,7 +289,7 @@ else
   done
 fi
 
-# --- 5) Bot --------------------------------------------------------------
+# --- 9) Bot --------------------------------------------------------------
 say "$(t "Spouštím IVory (Stop / Ctrl+C běh ukončí a uloží výsledky)." "Starting IVory (Stop / Ctrl+C ends the run and saves the results).")"
 "$VENV/bin/python" "$CORE/pogo_bot.py" "$@" &
 PY_PID=$!

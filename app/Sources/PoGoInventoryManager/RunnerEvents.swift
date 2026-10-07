@@ -101,11 +101,17 @@ extension Runner {
         case "problem":
             stats.errors += 1
             if let t = e["text"] as? String { activity = t }
+        case "device":
+            reachedPhone = true
+        case "connected":
+            connected = true
+            SetupFlow.shared.runConnected()
         case "fatal":
             if let t = e["text"] as? String {
                 fatalText = t
                 activity = t
             }
+            fatalHelp = e["help"] as? String
         default:
             break
         }

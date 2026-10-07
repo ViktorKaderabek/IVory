@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // If the app quits during a run, the bot shuts down cleanly (it saves the results).
         MainActor.assumeIsolated {
             Runner.shared.terminateNow()
+            SetupFlow.shared.terminate()
         }
     }
 }

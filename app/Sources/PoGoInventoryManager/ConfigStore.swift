@@ -5,7 +5,7 @@ import Foundation
 /// Bot settings. Saved to ~/.pogo/config.json, which runner.load_config (core/ivory/runner.py) reads.
 struct AppConfig: Codable, Equatable {
     var udid = ""
-    var teamId = ""
+    var appleId = ""
     var searchQuery = AppConfig.defaultSearchQuery
     var removeTag = "Removable"
     var removeTagColor = TagColor.red
@@ -26,6 +26,12 @@ struct AppConfig: Codable, Equatable {
     var consentVersion = 0
     var consentAt = ""
     var consentAppVersion = ""
+    /// The setup guide (Setup.swift): finished, the step it was left on, the steps IVory can't check and
+    /// the user confirmed by hand, and which iPhone it was done for.
+    var setupDone = false
+    var setupStep = ""
+    var setupConfirmed: [String] = []
+    var setupUdid = ""
 
     /// What the bot types into the storage Search field (the Pokémon it looks for duplicates among).
     static let defaultSearchQuery = "count & !legendary & !ultra beasts"
@@ -54,7 +60,7 @@ struct AppConfig: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case udid
-        case teamId = "team_id"
+        case appleId = "apple_id"
         case searchQuery = "search_query"
         case removeTag = "remove_tag"
         case removeTagColor = "remove_tag_color"
@@ -67,6 +73,10 @@ struct AppConfig: Codable, Equatable {
         case consentVersion = "consent_version"
         case consentAt = "consent_at"
         case consentAppVersion = "app_version"
+        case setupDone = "setup_done"
+        case setupStep = "setup_step"
+        case setupConfirmed = "setup_confirmed"
+        case setupUdid = "setup_udid"
     }
 
     init() {}
@@ -76,7 +86,7 @@ struct AppConfig: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AppConfig()
         udid = try c.decodeIfPresent(String.self, forKey: .udid) ?? d.udid
-        teamId = try c.decodeIfPresent(String.self, forKey: .teamId) ?? d.teamId
+        appleId = try c.decodeIfPresent(String.self, forKey: .appleId) ?? d.appleId
         searchQuery = try c.decodeIfPresent(String.self, forKey: .searchQuery) ?? d.searchQuery
         removeTag = try c.decodeIfPresent(String.self, forKey: .removeTag) ?? d.removeTag
         removeTagColor = (try? c.decodeIfPresent(TagColor.self, forKey: .removeTagColor)) ?? d.removeTagColor
@@ -95,6 +105,10 @@ struct AppConfig: Codable, Equatable {
         consentVersion = (try? c.decodeIfPresent(Int.self, forKey: .consentVersion)) ?? d.consentVersion
         consentAt = (try? c.decodeIfPresent(String.self, forKey: .consentAt)) ?? d.consentAt
         consentAppVersion = (try? c.decodeIfPresent(String.self, forKey: .consentAppVersion)) ?? d.consentAppVersion
+        setupDone = (try? c.decodeIfPresent(Bool.self, forKey: .setupDone)) ?? d.setupDone
+        setupStep = (try? c.decodeIfPresent(String.self, forKey: .setupStep)) ?? d.setupStep
+        setupConfirmed = (try? c.decodeIfPresent([String].self, forKey: .setupConfirmed)) ?? d.setupConfirmed
+        setupUdid = (try? c.decodeIfPresent(String.self, forKey: .setupUdid)) ?? d.setupUdid
     }
 }
 
@@ -185,12 +199,16 @@ final class ConfigStore: ObservableObject {
     func resetKeepingDevice() {
         var fresh = AppConfig()
         fresh.udid = config.udid
-        fresh.teamId = config.teamId
+        fresh.appleId = config.appleId
         fresh.language = config.language
         fresh.checkUpdates = config.checkUpdates
         fresh.consentVersion = config.consentVersion
         fresh.consentAt = config.consentAt
         fresh.consentAppVersion = config.consentAppVersion
+        fresh.setupDone = config.setupDone
+        fresh.setupStep = config.setupStep
+        fresh.setupConfirmed = config.setupConfirmed
+        fresh.setupUdid = config.setupUdid
         config = fresh
     }
 }

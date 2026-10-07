@@ -211,8 +211,11 @@ struct RunHero: View {
 
     private func start() {
         guard !runner.isRunning, store.config.steps.count > 0 else { return }
-        store.prepareRun()
-        runner.start(steps: store.config.steps, fresh: fresh)
+        let fresh = fresh
+        SetupFlow.shared.beforeStart {
+            store.prepareRun()
+            runner.start(steps: store.config.steps, fresh: fresh)
+        }
     }
 
     private var freshToggle: some View {

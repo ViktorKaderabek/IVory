@@ -5,3 +5,4 @@ opencv-python-headless>=4.8
 pillow>=10.0
 pyobjc-framework-Cocoa>=10.0
 pyobjc-framework-Vision>=10.0
+pymobiledevice3>=11.23

@@ -10,8 +10,8 @@ from pathlib import Path
 
 APPIUM_URL = "http://127.0.0.1:4723"
 UDID = ""                      # empty = the first connected iPhone
-TEAM_ID = ""                   # empty = taken from the "Apple Development" certificate in the Keychain
-SIGNING_ID = "Apple Development"
+APPLE_ID = ""                  # signs WebDriverAgent; a profile is only valid for the UDIDs it names,
+                               # so it has to be the phone owner's own account
 BUNDLE_ID = "com.nianticlabs.pokemongo"
 OUT_DIR = Path.home() / "Desktop" / "pogo_runs"
 STATE_DIR = Path.home() / ".pogo"
@@ -141,7 +141,7 @@ BAR_STABLE = 0.3               # ... and only once the values haven't changed fo
 BAR_QUICK = 0.1                # enough if the bars stood still for X s and the IVs match the Pokémon's CP and HP exactly
 
 # Speed and robustness
-MJPEG_PORT = 9100              # Appium forwards it from the phone to localhost
+MJPEG_PORT = 9100              # wda.py forwards it from the phone to localhost
 MJPEG_QUALITY = 60
 MJPEG_FPS = 60                 # more frames = the bot notices the next Pokémon sooner
 MJPEG_SCALE = 75               # stream resolution in % (OCR reads it without trouble)

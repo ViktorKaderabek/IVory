@@ -12,8 +12,10 @@ struct MainView: View {
     @State private var confettiStart: Date?
     /// Consent window: decided at launch (revoking consent in Settings takes effect from the next launch).
     @State private var askConsent: Bool?
+    @ObservedObject private var setup = SetupFlow.shared
 
     private var showConsent: Bool { askConsent ?? true }
+    private var showSetup: Bool { setup.isOpen }
 
     /// Minimum width of the screen next to the sidebar.
     private static let contentMinWidth: CGFloat = 1000
@@ -27,21 +29,38 @@ struct MainView: View {
         }
         .background(Theme.bg)
         .clipped()
-        .disabled(showConsent)
+        .disabled(showConsent || showSetup)
+        .overlay {
+            // After the notice, the setup guide: the main window can't be used until it's done.
+            if showSetup && !showConsent {
+                SetupOverlay().transition(.opacity)
+            }
+        }
         .overlay {
             // On the first start the notice covers the window instead of sitting in a dialog over it.
             if showConsent {
-                ConsentOverlay { withAnimation(.easeOut(duration: 0.25)) { askConsent = false } }
-                    .transition(.opacity)
+                ConsentOverlay {
+                    withAnimation(.easeOut(duration: 0.25)) { askConsent = false }
+                    SetupFlow.shared.appLaunched()
+                }
+                .transition(.opacity)
             }
         }
         .background { ConfigWatcher() }
+        .alert(tr("iPhone se nepodařilo ovládat", "IVory couldn’t control your iPhone"), isPresented: $setup.askGuide) {
+            Button(tr("Projít průvodce", "Go through the guide")) { setup.rerun() }
+            Button(tr("Teď ne", "Not now"), role: .cancel) {}
+        } message: {
+            Text(tr("Na iPhonu se možná něco změnilo. Chceš znovu projít průvodce nastavením? Povede tě krok po kroku, co funguje, přeskočí sám.",
+                    "Something on your iPhone may have changed. Go through the setup guide again? It takes you step by step and skips what already works."))
+        }
         .onAppear {
             guard let store = ConfigStore.current else { return }
             #if DEBUG
             if Perf.isActive { Perf.start(store: store) }
             #endif
             if askConsent == nil { askConsent = !Consent.isGiven(store.config) }
+            if askConsent == false { SetupFlow.shared.appLaunched() }
             Updater.shared.start { store.config.checkUpdates }
             StatsStore.shared.refresh(removeTag: store.config.removeTag)   // so Storage is ready right away
             BattleStore.shared.appear()       // the game data and bosses (Battle tags, new boss notifications)
@@ -50,6 +69,10 @@ struct MainView: View {
         }
         .onChange(of: runner.finishedAt) { _, _ in
             StatsStore.shared.refresh(removeTag: ConfigStore.current?.config.removeTag ?? "Removable")
+            // the run reached the phone but never got to control it: the guide is what fixes that
+            if runner.outcome == .failed, !runner.connected, runner.fatalHelp != nil || runner.reachedPhone {
+                SetupFlow.shared.runFailedOnPhone()
+            }
         }
         .onReceive(StatsStore.shared.$stats) { BattleStore.shared.buildTeams($0?.mons ?? []) }
         .onReceive(NotificationCenter.default.publisher(for: BossAlerts.openNote)) { note in
@@ -126,8 +149,10 @@ struct MainView: View {
     private func startFromStats() {
         showPage(.run)
         guard !runner.isRunning, let store = ConfigStore.current else { return }
-        store.prepareRun()
-        runner.start(steps: store.config.steps, fresh: false)
+        SetupFlow.shared.beforeStart {
+            store.prepareRun()
+            runner.start(steps: store.config.steps, fresh: false)
+        }
     }
 
     #if DEBUG
@@ -249,7 +274,7 @@ private struct ConfigWatcher: View {
 }
 
 /// How a screen arrives: it fades in and settles upwards a little.
-private struct PageIn: ViewModifier {
+struct PageIn: ViewModifier {
     let y: CGFloat
     let opacity: Double
 

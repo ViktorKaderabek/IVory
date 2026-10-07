@@ -25,6 +25,9 @@ Looking at the screen
 Driving the phone
   stream        the iPhone screen as an MJPEG video stream
   device        the Bot: frames, taps, drags, typing, and the safety check before every touch
+  phone         asking the iPhone about itself (usbmux / lockdown), on a private asyncio loop
+  signing       signing WebDriverAgent with the user's Apple ID (altsign-cli)
+  wda           installing WebDriverAgent on the iPhone and running it, without Xcode
   session       connecting to the iPhone (Appium / WebDriverAgent) and restarting the game
   detail        opening a Pokémon and reading its IVs from the appraisal
   scroll        reading the grid and scrolling it

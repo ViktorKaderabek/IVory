@@ -29,6 +29,14 @@ def T(cs, en):
     return cs if cfg.LANG == "cs" else en
 
 
+def load_language():
+    """The language from ~/.pogo/config.json, for the small tools that don't load all the settings."""
+    try:
+        cfg.LANG = "cs" if json.loads(cfg.CONFIG_FILE.read_text()).get("language") == "cs" else "en"
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
 def log(msg=""):
     print(msg, flush=True)
     if cfg.LOG_FILE:

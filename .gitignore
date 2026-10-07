@@ -1,6 +1,8 @@
 # built app, the runtime from scripts/build_runtime.sh and Swift build output
 dist/
 build/
+# runtime/ is built by scripts/build_wda_runtime.sh (prebuilt WebDriverAgent + altsign-cli)
+runtime/
 app/.build/
 .swiftpm/
 
@@ -21,3 +23,5 @@ calibration.json
 *.png
 !app/*.png
 !docs/*.png
+!app/Resources/setup/*.png
+!app/Resources/setup/cs/*.png

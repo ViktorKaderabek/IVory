@@ -1,59 +1,96 @@
 import Foundation
 
-/// Helpers for settings: find the connected iPhone and the Apple Team ID.
+/// Finding the connected iPhone and asking it what the setup guide needs to know.
+///
+/// None of it reaches for Xcode. usbmuxd answers what it can on its own (see Usbmux); everything that
+/// needs a lockdown session goes through pymobiledevice3 – the same library the bot drives the phone
+/// with – via `core/setup.py`, once `scripts/run.sh --prepare` has set up the Python for it.
 enum DeviceTools {
     struct Device: Identifiable, Hashable {
         let name: String
         let os: String
         let udid: String
         var id: String { udid }
-    }
-
-    /// Connected iPhones (not simulators), from `xcrun xctrace list devices`.
-    static func connectedDevices() async -> [Device] {
-        let output = await shell("xcrun xctrace list devices 2>/dev/null")
-        var devices: [Device] = []
-        var section = ""
-        let pattern = #"^(.*) \(([\d.]+)\) \(([0-9A-Fa-f-]{20,})\)$"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        for raw in output.split(separator: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("==") {
-                section = line
-                continue
-            }
-            guard !section.contains("Simulator"), !line.contains("Simulator") else { continue }
-            let range = NSRange(line.startIndex..., in: line)
-            guard let m = regex.firstMatch(in: line, range: range), m.numberOfRanges == 4,
-                  let name = Range(m.range(at: 1), in: line),
-                  let os = Range(m.range(at: 2), in: line),
-                  let udid = Range(m.range(at: 3), in: line) else { continue }
-            devices.append(Device(name: String(line[name]), os: String(line[os]), udid: String(line[udid])))
+        /// The userspace tunnel needs CoreDeviceProxy, which iOS 17.0–17.3 don't have.
+        var supported: Bool {
+            let parts = os.split(separator: ".").compactMap { Int($0) }
+            guard let major = parts.first else { return true }
+            return major > 17 || (major == 17 && (parts.count > 1 ? parts[1] : 0) >= 4)
         }
-        return devices
     }
 
-    /// Team ID from the "Apple Development" certificate in the Keychain (the OU field).
-    static func teamId() async -> String? {
-        let output = await shell(
-            "security find-certificate -c 'Apple Development' -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null")
-        guard let regex = try? NSRegularExpression(pattern: #"OU\s*=\s*([A-Z0-9]{10})"#),
-              let m = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
-              let r = Range(m.range(at: 1), in: output) else { return nil }
-        return String(output[r])
+    /// What `setup.py check` found out about one phone.
+    struct Check: Decodable {
+        let paired: Bool
+        let devmode: Bool?
     }
 
-    private static func shell(_ command: String) async -> String {
+    // MARK: - where the pieces live
+
+    /// Resources/ inside IVory.app, or the repository root when run from a clone.
+    static var resources: URL {
+        Bundle.main.resourceURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    }
+
+    static var core: String { resources.appendingPathComponent("core").path }
+
+    /// The Python `run.sh --prepare` sets up. The guide opens before that is done, so every caller has to
+    /// cope with it being missing rather than assume a working environment.
+    static var venvPython: String? {
+        let p = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".pogo/venv/bin/python").path
+        return FileManager.default.isExecutableFile(atPath: p) ? p : nil
+    }
+
+    // MARK: - devices
+
+    /// Connected iPhones, with names and iOS versions straight from their lockdown service.
+    static func connectedDevices() async -> [Device] {
+        await Task.detached(priority: .userInitiated) {
+            Usbmux.listDevices().map { entry in
+                let info = Usbmux.deviceInfo(entry)
+                return Device(name: info?.name ?? "iPhone", os: info?.os ?? "", udid: entry.udid)
+            }
+        }.value
+    }
+
+    /// Paired and Developer Mode, asked over a lockdown session. Nil while the Python for it isn't ready.
+    static func check(udid: String) async -> Check? {
+        guard let python = venvPython else { return nil }
+        let out = await run(python, ["\(core)/setup.py", "check", udid], env: ["PYTHONPATH": core])
+        guard let line = out.split(separator: "\n").last(where: { $0.hasPrefix("{") }),
+              let data = line.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(Check.self, from: data)
+    }
+
+    /// Makes the Developer Mode switch appear in the phone's Settings.
+    static func revealDeveloperMode(udid: String) async -> Bool {
+        guard let python = venvPython else { return false }
+        let out = await run(python, ["\(core)/setup.py", "reveal", udid], env: ["PYTHONPATH": core])
+        return out.contains("\"ok\": true")
+    }
+
+    // MARK: - running things
+
+    /// Runs a helper and returns its stdout. A phone that hangs (locked, asking to trust) must not hang the
+    /// guide, so the helper is stopped after `timeout` seconds – longer than its own two 30 s waits.
+    static func run(_ path: String, _ args: [String], env: [String: String] = [:], timeout: Double = 75) async -> String {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
                 let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                process.arguments = ["-lc", command]
+                process.executableURL = URL(fileURLWithPath: path)
+                process.arguments = args
+                if !env.isEmpty {
+                    process.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
+                }
                 let pipe = Pipe()
                 process.standardOutput = pipe
-                process.standardError = Pipe()
+                process.standardError = FileHandle.nullDevice      // a full, unread pipe would block it
+                process.standardInput = FileHandle.nullDevice
                 do {
                     try process.run()
+                    DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                        if process.isRunning { process.terminate() }
+                    }
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
                     continuation.resume(returning: String(decoding: data, as: UTF8.self))

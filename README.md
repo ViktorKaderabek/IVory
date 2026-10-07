@@ -221,11 +221,11 @@ new or have changed. The log ends each reading with a ⏱ line that says how lon
 | | |
 |---|---|
 | 💻 **Mac** | macOS 14 Sonoma or later, Apple Silicon or Intel |
-| 🛠️ **Xcode** | Free from the [App Store](https://apps.apple.com/app/xcode/id497799835). Open it once after installing. Sign in with your Apple ID under Xcode → Settings → Accounts. |
-| 📱 **iPhone** | Connected by cable, unlocked and trusted, with **Developer Mode** on and **UI Automation** enabled (see [iPhone setup](#iphone-setup-one-time)) |
+| 📱 **iPhone** | **iOS 17.4 or newer**, connected by cable, unlocked and trusted, with **Developer Mode** on and **UI Automation** enabled (see [iPhone setup](#iphone-setup-one-time)) |
+| 🍎 **Apple ID** | Any Apple ID, free. IVory signs the helper app that controls the iPhone with it — Apple only allows control of devices belonging to the signing account. |
 | 🌐 **Internet** | For the first start, which downloads about 250 MB of tools, once a week for the game data (about 22 MB), and once a day for the raid boss list (a few kB) |
 
-Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV and Apple Vision) **is downloaded by IVory itself** on the first start. You don't need Homebrew or Terminal.
+**You don't need Xcode.** Everything else (Node.js, Appium, Python with OpenCV and Apple Vision, and WebDriverAgent itself) **is set up by IVory** on the first start. No Homebrew, no Terminal, no 15 GB download from the App Store.
 
 ## Installation
 
@@ -247,8 +247,10 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
 
    </details>
 4. Read the risk notice and confirm all three points (only the first time).
-5. Connect your iPhone and press **Start**.
-   The first start sets everything up by itself and shows each step in the app:
+5. The **setup guide** opens by itself and takes you through seven steps: connecting the iPhone, Developer Mode,
+   UI Automation, your Apple ID, installing, trusting the developer and the first **Start**
+   (see [iPhone setup](#iphone-setup-one-time)). It downloads the tools in the background while you go through the
+   first steps, and shows each of them:
 
 <p align="center">
   <picture>
@@ -265,12 +267,13 @@ Everything else (Node.js, Appium with the XCUITest driver, Python with OpenCV an
 | | What IVory installs | Where |
 |---|---|---|
 | 1 | Node.js 24 (official build from nodejs.org), only if you don't have Node 20+ already | `~/.pogo/runtime/node` |
-| 2 | Appium 3 and its XCUITest driver (includes WebDriverAgent) | `~/.pogo/runtime/node`, `~/.appium` |
+| 2 | Appium 3 and its XCUITest driver | `~/.pogo/runtime/node`, `~/.appium` |
 | 3 | Python 3.12 ([python-build-standalone](https://github.com/astral-sh/python-build-standalone)) | `~/.pogo/runtime/python` |
-| 4 | Python libraries: Appium client, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
+| 4 | Python libraries: Appium client, pymobiledevice3, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
+| 5 | WebDriverAgent, signed for your iPhone with your Apple ID | `~/.pogo/runtime`, and the iPhone |
 
 Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI (`core/requirements.txt`). It takes a few minutes, needs no password and is skipped on later starts.
-On the first run Xcode also builds and signs WebDriverAgent on your iPhone, which takes another minute or two.
+WebDriverAgent ships with IVory already built, so nothing is compiled on your Mac. IVory only signs it for your iPhone — a development signature is tied to the exact device, so it can't be made in advance — and installs it. That takes a few seconds.
 
 </details>
 
@@ -279,7 +282,8 @@ On the first run Xcode also builds and signs WebDriverAgent on your iPhone, whic
 IVory checks for a new version when it starts and then once a day. When there is one, a card shows up in the sidebar:
 
 1. **What's new** opens the release notes, **Download** fetches the new version in the background. You can keep working.
-2. The download is checked against the SHA-256 checksum published with the release.
+2. The download is checked against the SHA-256 checksum GitHub publishes with the release, and the new app's code
+   signature has to cover every file in it. A release without a checksum, or from anywhere but this repository, isn't installed.
 3. **Restart** swaps the app for the new one and opens it again. Your settings and measured IVs stay.
 
 IVory never updates by itself and you can't restart while it's sorting: the card waits until the run ends.
@@ -294,8 +298,12 @@ The × hides it until the next start. You can also check by hand or turn the aut
 ```bash
 git clone https://github.com/ViktorKaderabek/IVory.git
 cd IVory
+bash scripts/build_wda_runtime.sh   # prebuilt WebDriverAgent + altsign-cli → runtime/
 bash app/build_app.sh --install     # → ~/Applications/IVory.app
 ```
+
+Building the app needs Xcode (it compiles Swift) — *using* it doesn't. `build_wda_runtime.sh` also builds
+[altsign-cli](https://github.com/xhzq233/altsign-cli), which needs OpenSSL 3 (`brew install openssl`).
 
 Without `--install` the app stays in `dist/`. To build the installer DMG yourself:
 
@@ -307,14 +315,36 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 
 ## iPhone setup (one time)
 
-1. Connect the iPhone by cable, unlock it and confirm **Trust This Computer**.
-2. Turn on **Developer Mode**: Settings → Privacy & Security → Developer Mode (the iPhone restarts).
-   If you don't see it, open Xcode once with the iPhone connected.
+The setup guide in the app does all of this with you, shows the iPhone screens with what to tap, and waits by itself
+for whatever IVory can check (the phone connecting, Developer Mode, the restart), then lights up **Continue**. By hand it is:
+
+1. Connect the iPhone by cable, unlock it, allow the accessory and confirm **Trust This Computer**.
+2. Turn on **Developer Mode**: Settings → Privacy & Security → Developer Mode (the iPhone restarts; afterwards confirm
+   **Turn On**). If you don't see it, the guide's **I don't see this option** makes the switch appear.
 3. Turn on **Settings → Developer → Enable UI Automation**.
-4. In IVory open **Settings → iPhone** and press **Find** and **Detect**. This fills in the device and the Apple Team ID
-   used to sign WebDriverAgent. With a free Apple ID the signature is valid for 7 days. After that, IVory signs it again on the next start.
-5. The first time WebDriverAgent starts, the iPhone may ask you to trust the developer:
-   Settings → General → VPN & Device Management → your Apple ID → Trust.
+4. Sign in with your **Apple ID** and, when Apple asks, the six-digit code from your iPhone. IVory signs WebDriverAgent
+   with it. The sign-in lasts about a year, the signature 7 days — IVory renews the signature by itself.
+5. IVory installs WebDriverAgent on the iPhone (the app with a blank icon called *WebDriverAgentRunner*).
+6. Trust the developer: Settings → General → VPN & Device Management → your Apple ID → **Trust**.
+7. Open Pokémon GO and press **Start**.
+
+The guide stays until a run has actually connected to the iPhone; a first run that can't connect brings it back.
+Later, when a run can't control the iPhone (the helper app deleted, the phone erased, another iPhone), IVory asks
+whether to go through the guide again — it skips what still works. **Settings → iPhone → Run setup again** does the same
+any time.
+
+### Your Apple ID
+
+- The password is typed into IVory and handed straight to the bundled `altsign-cli`, which signs in with Apple itself
+  (`gsa.apple.com`, the same sign-in Xcode uses, so the password isn't even sent in readable form). It is never saved,
+  logged or passed on the command line. The six-digit code comes from Apple, which is how you know it's really Apple.
+- What stays on the Mac is the session `altsign-cli` keeps in `~/Library/Application Support/altsign/` (readable by
+  your user only) for about a year. **Settings → iPhone → Sign out** deletes it.
+- The only servers that see your account are Apple's: `gsa.apple.com` and `developerservices2.apple.com`. The machine
+  data Apple asks for during the sign-in comes from macOS itself, not from a third-party server.
+- Before IVory gives the password to `altsign-cli`, it checks that the app's own code signature still covers every file
+  in it. A changed IVory.app refuses to sign in. Download IVory only from this repository's
+  [Releases](https://github.com/ViktorKaderabek/IVory/releases).
 
 ## Usage
 
@@ -343,7 +373,7 @@ bash scripts/build_dmg.sh           # → dist/IVory.dmg
 <br>
 
 - **General**: Čeština / English, the installed version, **Check now** and **Check for updates automatically**, and how much space the run results in `~/Desktop/pogo_runs` take, with **Delete** (the bot's memory, the Pokémon photos and the run history stay).
-- **iPhone**: device and Apple Team ID, with **Find** and **Detect**.
+- **iPhone**: the device with **Find**, the Apple ID with **Sign in** / **Sign out** (and until when the sign-in lasts), and **Run setup again**.
 - **Notifications**: new raid bosses.
 - **Advanced**: how many duplicate groups to check, the settings file, reset to defaults.
 - **About**: version, license, the risk notice, when you confirmed it and **Revoke** (the notice shows up again on the next start).
@@ -362,7 +392,8 @@ bash scripts/run.sh --fresh                           # measure IVs again (ignor
 ```
 
 Or double-click `Start.command`. The script sets up the same tools as the app on its first run.
-If you haven't confirmed the risk notice in the app yet, the script shows it and asks you to type `I agree`.
+If you haven't confirmed the risk notice in the app yet, the script shows it and asks you to type `I agree`,
+and if no Apple ID is set up yet it asks for one so it can sign WebDriverAgent.
 
 ## How it works
 
@@ -375,6 +406,7 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 </p>
 
 - The iPhone is controlled through **Appium + WebDriverAgent** (XCUITest), the same tooling used for automated iOS app tests.
+- **No Xcode.** WebDriverAgent comes prebuilt, is signed with your Apple ID by `altsign-cli`, and is installed and started by [pymobiledevice3](https://github.com/doronz88/pymobiledevice3) over a userspace tunnel (no admin password). Appium is handed the finished address, so it never reaches for `xcodebuild`. That tunnel is why iOS 17.4 is the minimum.
 - The screen arrives as a video stream (~15 fps) and text is read with **Apple Vision** OCR right on the Mac.
 - IVs are read pixel by pixel from the appraisal bars.
 - **Fast mode** (default) reads the storage only once, for all steps. In the appraisal it jumps to the next Pokémon with the ▶ arrow and keeps everything in memory; duplicates, IV tags, PvP tags and renaming are all decided from that one read.
@@ -416,7 +448,7 @@ If you haven't confirmed the risk notice in the app yet, the script shows it and
 | `language` | system | language of the app and the log: `en` or `cs` |
 | `check_updates` | `true` | check for a new version on start and once a day |
 | `udid` | empty | iPhone UDID; empty = the first connected device |
-| `team_id` | empty | Apple Team ID for signing WebDriverAgent; empty = taken from the “Apple Development” certificate |
+| `apple_id` | empty | the Apple ID WebDriverAgent is signed with. The password is never stored here: `altsign-cli` keeps the session itself. |
 | `search_query` | `count & !legendary & !ultra beasts` | what the bot types into the storage search |
 | `remove_tag` | `Removable` | tag for worse duplicates |
 | `remove_tag_color` | `red` | color used when the tag is created: `blue`, `green`, `purple`, `yellow`, `red`, `orange`, `gray`, `black` |
@@ -516,9 +548,10 @@ System Settings → Privacy & Security → **Open Anyway** (see [Installation](#
 </details>
 
 <details>
-<summary><b>“Xcode is missing” / “Xcode isn't set up yet”</b></summary>
+<summary><b>“This iPhone needs iOS 17.4 or newer”</b></summary>
 
-Install Xcode from the App Store, open it once and let it install its components, then press Start again.
+IVory starts WebDriverAgent over a userspace tunnel, which iOS 17.0–17.3 can't serve. Update the iPhone in
+Settings → General → Software Update.
 </details>
 
 <details>
@@ -542,7 +575,7 @@ On the iPhone, turn on Settings → Developer → *Enable UI Automation*. IVory 
 <details>
 <summary><b>WebDriverAgent can't be signed</b></summary>
 
-Check the Team ID in Settings → iPhone and that your Apple ID is signed in to Xcode. A free signature lasts 7 days; Appium signs it again on the next start.
+Open Settings → iPhone and press **Sign in** again (it opens the guide on the Apple ID step): the Apple session expired (it lasts about a year). The signature itself lasts 7 days and IVory renews it by itself. On the iPhone, trust the developer under Settings → General → VPN & Device Management.
 </details>
 
 <details>

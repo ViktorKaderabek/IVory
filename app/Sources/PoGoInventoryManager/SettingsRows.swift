@@ -79,8 +79,15 @@ struct RunResultsRow: View {
 struct DeviceRows: View {
     @EnvironmentObject private var store: ConfigStore
     @ObservedObject private var found = DeviceState.shared
+    @ObservedObject private var setup = SetupFlow.shared
+    @State private var session: AppleAccount.Session?
 
     private typealias Kind = DeviceState.Kind
+    private static let expiryFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -92,24 +99,51 @@ struct DeviceRows: View {
                 }
             }
             if found.message != nil { statusLine }
-            LabeledField(label: "Apple Team ID") {
-                HStack(spacing: 6) {
-                    DesignField {
-                        TextField(tr("automaticky z certifikátu", "automatic, from the certificate"),
-                                  text: $store.config.teamId)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Theme.text)
+            LabeledField(label: "Apple ID") {
+                HStack(spacing: 8) {
+                    Image(systemName: signedIn ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                        .foregroundStyle(signedIn ? Theme.green : Theme.orange)
+                    Text(appleLine)
+                        .font(.system(size: 12))
+                        .foregroundStyle(signedIn ? Theme.text : Theme.muted)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 6)
+                    if signedIn {
+                        SmallOutlineButton(symbol: nil, title: tr("Odhlásit", "Sign out")) {
+                            AppleAccount.signOut()
+                            refreshSignIn()
+                        }
+                    } else {
+                        SmallOutlineButton(symbol: nil, title: tr("Přihlásit", "Sign in")) { SetupFlow.shared.signInOnly() }
                     }
-                    SmallOutlineButton(symbol: nil, title: tr("Zjistit", "Detect")) { findTeam() }
-                        .disabled(found.busy)
                 }
+            }
+            Text(tr("""
+                    IVory tvým Apple ID podepíše pomocnou aplikaci, bez které iPhone ovládat nejde. \
+                    Přihlášení probíhá přímo u Applu a heslo si IVory neukládá; v Macu zůstane jen \
+                    přihlášení na asi rok. Odhlášením ho smažeš.
+                    """,
+                    """
+                    IVory signs the helper app the iPhone can't be controlled without with your Apple ID. \
+                    The sign-in goes straight to Apple and IVory never stores the password; only the \
+                    sign-in stays on the Mac, for about a year. Signing out deletes it.
+                    """))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                SmallOutlineButton(symbol: "arrow.counterclockwise", title: tr("Projít nastavení znovu", "Run setup again")) {
+                    SetupFlow.shared.rerun()
+                }
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 16)
         .animation(.snappy, value: found.message)
+        .onAppear { refreshSignIn() }
+        .onChange(of: setup.isOpen) { _, _ in refreshSignIn() }
     }
 
     /// Found iPhones as a menu, otherwise a manually entered UDID.
@@ -166,14 +200,6 @@ struct DeviceRows: View {
                     .foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if let proposedTeam = found.proposedTeam {
-                    QuietButton(title: tr("Použít", "Use")) {
-                        store.config.teamId = proposedTeam
-                        found.proposedTeam = nil
-                        found.messageKind = .ok
-                        found.message = "Team ID: \(proposedTeam)"
-                    }
-                }
             }
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
@@ -213,34 +239,28 @@ struct DeviceRows: View {
         }
     }
 
-    private func findTeam() {
-        found.busy = true
-        found.messageKind = .info
-        found.message = tr("Hledám certifikát Apple Development…", "Looking for the Apple Development certificate…")
-        found.proposedTeam = nil
-        Task {
-            if let team = await DeviceTools.teamId() {
-                if store.config.teamId.isEmpty {
-                    store.config.teamId = team
-                    found.messageKind = .ok
-                    found.message = "Team ID: \(team)"
-                } else if store.config.teamId == team {
-                    found.messageKind = .ok
-                    found.message = tr("Team ID sedí s certifikátem.", "The Team ID matches the certificate.")
-                } else {
-                    // Don't overwrite the current value automatically – if signing works, it's correct.
-                    found.proposedTeam = team
-                    found.messageKind = .warning
-                    found.message = tr("V certifikátu je \(team). Když ti podepisování funguje se současnou hodnotou, nech ji být.",
-                                 "The certificate says \(team). If signing works with the current value, leave it as it is.")
-                }
-            } else {
-                found.messageKind = .warning
-                found.message = tr("Certifikát „Apple Development“ jsem nenašel. Přihlas se v Xcode → Settings → Accounts.",
-                             "No “Apple Development” certificate found. Sign in under Xcode → Settings → Accounts.")
-            }
-            found.busy = false
+    // MARK: - signing in to Apple
+
+    private var signedIn: Bool {
+        guard let session else { return false }
+        return session.valid && session.appleId.caseInsensitiveCompare(store.config.appleId) == .orderedSame
+    }
+
+    private var appleLine: String {
+        if signedIn {
+            guard let expires = session?.expires else { return store.config.appleId }
+            let f = Self.expiryFormat
+            f.locale = L10n.locale
+            return tr("\(store.config.appleId) · platí do \(f.string(from: expires))",
+                      "\(store.config.appleId) · valid until \(f.string(from: expires))")
         }
+        return store.config.appleId.isEmpty ? tr("Nepřihlášeno", "Not signed in")
+            : tr("\(store.config.appleId) · přihlášení vypršelo", "\(store.config.appleId) · sign-in expired")
+    }
+
+    /// Read from altsign-cli's session file, without asking Apple.
+    private func refreshSignIn() {
+        session = AppleAccount.session()
     }
 }
 

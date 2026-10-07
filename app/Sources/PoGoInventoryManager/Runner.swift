@@ -125,6 +125,12 @@ final class Runner: ObservableObject {
     @Published var lastTagChange: (tag: String, delta: Int)?
     /// The message the bot ended with (a plain sentence for the hero card).
     @Published var fatalText: String?
+    /// The setup step that message points back to ("uiauto", "trust", "devmode", "pair", "signin").
+    @Published var fatalHelp: String?
+    /// The run got as far as controlling the iPhone (the bot's "connected" event).
+    @Published var connected = false
+    /// The bot found the iPhone (its "device" event); a failure after that is the phone's setup.
+    var reachedPhone = false
 
     var process: Process?
     var pending = ""
@@ -197,6 +203,9 @@ final class Runner: ObservableObject {
         boxTotal = 0
         lastTagChange = nil
         fatalText = nil
+        fatalHelp = nil
+        connected = false
+        reachedPhone = false
         measuredSeen = []
         current = nil
         justRead = []
