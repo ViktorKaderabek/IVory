@@ -34,6 +34,13 @@ enum DeviceTools {
 
     static var core: String { resources.appendingPathComponent("core").path }
 
+    /// The environment for running the core's Python. Its compiled files go to ~/.pogo/pycache: inside
+    /// IVory.app they would break the app's code signature (see AppleAccount.bundleIsIntact).
+    static var pythonEnvironment: [String: String] {
+        ["PYTHONPATH": core, "PYTHONUNBUFFERED": "1", "PYTHONWARNINGS": "ignore",
+         "PYTHONPYCACHEPREFIX": NSHomeDirectory() + "/.pogo/pycache"]
+    }
+
     /// The Python `run.sh --prepare` sets up. The guide opens before that is done, so every caller has to
     /// cope with it being missing rather than assume a working environment.
     static var venvPython: String? {
@@ -56,7 +63,7 @@ enum DeviceTools {
     /// Paired and Developer Mode, asked over a lockdown session. Nil while the Python for it isn't ready.
     static func check(udid: String) async -> Check? {
         guard let python = venvPython else { return nil }
-        let out = await run(python, ["\(core)/setup.py", "check", udid], env: ["PYTHONPATH": core])
+        let out = await run(python, ["\(core)/setup.py", "check", udid], env: pythonEnvironment)
         guard let line = out.split(separator: "\n").last(where: { $0.hasPrefix("{") }),
               let data = line.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(Check.self, from: data)
@@ -65,7 +72,7 @@ enum DeviceTools {
     /// Makes the Developer Mode switch appear in the phone's Settings.
     static func revealDeveloperMode(udid: String) async -> Bool {
         guard let python = venvPython else { return false }
-        let out = await run(python, ["\(core)/setup.py", "reveal", udid], env: ["PYTHONPATH": core])
+        let out = await run(python, ["\(core)/setup.py", "reveal", udid], env: pythonEnvironment)
         return out.contains("\"ok\": true")
     }
 

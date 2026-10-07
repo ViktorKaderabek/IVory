@@ -19,6 +19,9 @@ set -u
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 export PYTHONWARNINGS=ignore
 export PYTHONUNBUFFERED=1
+# Python's compiled files go to ~/.pogo, never next to the sources: inside IVory.app they would be files
+# its code signature doesn't cover, and the app refuses to hand the Apple ID password to a changed bundle.
+export PYTHONPYCACHEPREFIX="$HOME/.pogo/pycache"
 export npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
