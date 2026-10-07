@@ -105,7 +105,11 @@ if [ "$FORCE" = 1 ] || [ ! -x "$OUT/altsign-cli" ]; then
     git clone -q https://github.com/xhzq233/altsign-cli "$SRC" || die "Klonování altsign-cli selhalo."
   fi
   git -C "$SRC" cat-file -e "$ALTSIGN_COMMIT^{commit}" 2>/dev/null || git -C "$SRC" fetch -q --all
+  git -C "$SRC" reset -q --hard
   git -C "$SRC" checkout -q "$ALTSIGN_COMMIT" || die "Commit $ALTSIGN_COMMIT v altsign-cli není."
+  # IVory's changes (scripts/altsign-ivory.patch): never revoke a certificate IVory didn't make, put the
+  # user's keychain list back after signing, random passwords for the throwaway keychain and .p12.
+  git -C "$SRC" apply "$ROOT/scripts/altsign-ivory.patch" || die "Patch altsign-cli nejde použít."
   WORK="$(mktemp -d)"
   for arch in arm64 x86_64; do
     build_openssl "$arch"

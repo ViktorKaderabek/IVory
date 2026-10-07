@@ -338,8 +338,16 @@ any time.
 - The password is typed into IVory and handed straight to the bundled `altsign-cli`, which signs in with Apple itself
   (`gsa.apple.com`, the same sign-in Xcode uses, so the password isn't even sent in readable form). It is never saved,
   logged or passed on the command line. The six-digit code comes from Apple, which is how you know it's really Apple.
-- What stays on the Mac is the session `altsign-cli` keeps in `~/Library/Application Support/altsign/` (readable by
-  your user only) for about a year. **Settings → iPhone → Sign out** deletes it.
+- What stays on the Mac is the session and the signing certificate's private key, which `altsign-cli` keeps in
+  `~/Library/Application Support/altsign/` (readable by your user only); the session lasts about a year.
+  **Settings → iPhone → Sign out** deletes both.
+- Signing creates one free development certificate on your account, named *IVory*. IVory **never revokes a certificate
+  it didn't make**, so whatever Xcode, AltStore or Sideloadly signed with your Apple ID keeps working. If the account
+  already has as many certificates as Apple allows, IVory says so and asks you to free one at
+  [developer.apple.com](https://developer.apple.com/account/resources/certificates/list) instead of revoking one itself.
+- `altsign-cli` is built from its [source](https://github.com/xhzq233/altsign-cli) at a pinned commit, with IVory's
+  changes in [`scripts/altsign-ivory.patch`](scripts/altsign-ivory.patch): the certificate rule above, the keychain
+  list it borrows during signing put back afterwards, and random passwords for the throwaway signing keychain.
 - The only servers that see your account are Apple's: `gsa.apple.com` and `developerservices2.apple.com`. The machine
   data Apple asks for during the sign-in comes from macOS itself, not from a third-party server.
 - Before IVory gives the password to `altsign-cli`, it checks that the app's own code signature still covers every file

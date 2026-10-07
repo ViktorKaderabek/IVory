@@ -1,0 +1,252 @@
+diff --git a/apple_api.h b/apple_api.h
+index 6917cb7..a20229f 100644
+--- a/apple_api.h
++++ b/apple_api.h
+@@ -26,9 +26,14 @@ NS_ASSUME_NONNULL_BEGIN
+ @property (nonatomic, copy, nullable) NSData *data;       // DER 证书数据
+ @property (nonatomic, copy, nullable) NSData *privateKey;  // RSA 私钥
+ @property (nonatomic, copy, nullable) NSData *machineIdentifier;
++@property (nonatomic, copy, nullable) NSString *serialNumber;
++/// Who made the certificate (the machine name given with its request): IVory only ever revokes its own.
++@property (nonatomic, copy, nullable) NSString *machineName;
+ 
+ /// 生成 P12 (PKCS#12) 数据，签名时需要
+ - (nullable NSData *)p12Data;
++/// The password p12Data is protected with.
++- (NSString *)p12Password;
+ @end
+ 
+ @interface ALTDevice : NSObject
+diff --git a/apple_api.mm b/apple_api.mm
+index 8af7931..abcd7a3 100644
+--- a/apple_api.mm
++++ b/apple_api.mm
+@@ -30,6 +30,15 @@ @implementation ALTTeam
+ 
+ @implementation ALTCertificate
+ 
++/// A fresh random password for the throwaway .p12, instead of one written in the source.
++- (NSString *)p12Password
++{
++    static NSString *password;
++    static dispatch_once_t once;
++    dispatch_once(&once, ^{ password = [[NSUUID UUID] UUIDString]; });
++    return password;
++}
++
+ - (nullable NSData *)p12Data
+ {
+     if (!self.data || !self.privateKey) return nil;
+@@ -62,7 +71,7 @@ - (nullable NSData *)p12Data
+         return nil;
+     }
+ 
+-    char pass[] = "altsign";
++    const char *pass = [self p12Password].UTF8String;
+     PKCS12 *p12 = PKCS12_create(pass, "", pkey, cert, NULL,
+                                  NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
+                                  NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
+@@ -403,6 +412,8 @@ - (void)fetchCertificatesForTeam:(ALTTeam *)team
+                     NSDictionary *attrs = dict[@"attributes"] ?: dict;
+                     cert.identifier = dict[@"id"] ?: attrs[@"serialNumber"] ?: @"";
+                     cert.name = attrs[@"name"];
++                    cert.serialNumber = attrs[@"serialNumber"];
++                    cert.machineName = attrs[@"machineName"];
+ 
+                     NSString *certContent = attrs[@"certificateContent"] ?: attrs[@"certContent"];
+                     if (certContent) {
+@@ -431,7 +442,7 @@ - (void)submitCertificateRequest:(NSData *)csrData
+          additionalParameters:@{
+              @"csrContent": csrContent ?: @"",
+              @"machineId": [[NSUUID UUID] UUIDString],
+-             @"machineName": @"AltSign Device"
++             @"machineName": @"IVory"
+          }
+                       session:session team:team
+             completionHandler:^(NSDictionary *response, NSError *error) {
+@@ -448,7 +459,18 @@ - (void)submitCertificateRequest:(NSData *)csrData
+                             userInfo:@{NSLocalizedDescriptionKey: @"Certificate created but not found in list"}]);
+                         return;
+                     }
+-                    ALTCertificate *cert = certs.firstObject;
++                    // The new certificate is the one with the serial number Apple just issued, not whichever
++                    // happens to come first in a team that has several.
++                    ALTCertificate *cert = nil;
++                    for (ALTCertificate *c in certs) {
++                        if (serialNum && [c.serialNumber caseInsensitiveCompare:serialNum] == NSOrderedSame) { cert = c; break; }
++                    }
++                    if (!cert && certs.count == 1) cert = certs.firstObject;
++                    if (!cert) {
++                        completion(nil, [NSError errorWithDomain:@"com.altsign" code:-1
++                            userInfo:@{NSLocalizedDescriptionKey: @"Certificate created but not found in list"}]);
++                        return;
++                    }
+                     NSLog(@"[API] Certificate fetched after CSR: %@ (hasData=%d)", cert.identifier, (cert.data != nil));
+                     completion(cert, nil);
+                 }];
+diff --git a/main.mm b/main.mm
+index a7496a7..1a8e64d 100644
+--- a/main.mm
++++ b/main.mm
+@@ -649,6 +649,10 @@ static BOOL performSign(NSString *appleID, NSString *password,
+                     }
+                     [api submitCertificateRequest:certReq.data team:team session:session completionHandler:^(ALTCertificate *cert, NSError *error) {
+                         if (error || !cert) {
++                            if (certs.count > 0) {
++                                // most likely the account's limit of development certificates
++                                NSLog(@"[Error] IVORY_CERT_LIMIT %lu existing development certificates", (unsigned long)certs.count);
++                            }
+                             NSLog(@"[Error] Failed to create certificate: %@", error);
+                             dispatch_semaphore_signal(sem);
+                             return;
+@@ -660,23 +664,28 @@ static BOOL performSign(NSString *appleID, NSString *password,
+                     }];
+                 };
+ 
+-                if (certs.count > 0) {
+-                    ALTCertificate *cert = certs.firstObject;
+-                    NSLog(@"[Step 3] Found existing certificate: %@", cert.identifier);
+-                    NSData *savedKey = loadCertKey(cert.identifier);
+-                    if (savedKey) {
+-                        cert.privateKey = savedKey;
+-                        NSLog(@"[Step 3] Loaded saved private key");
+-                        continueWithCert(cert);
+-                    } else {
+-                        NSLog(@"[Step 3] No saved private key, revoking and recreating...");
+-                        [api revokeCertificate:cert team:team session:session completionHandler:^(BOOL ok, NSError *revokeErr) {
+-                            if (!ok) {
+-                                NSLog(@"[Warning] Revoke failed: %@, attempting create anyway...", revokeErr);
+-                            }
+-                            createNewCert();
+-                        }];
+-                    }
++                // IVory: a certificate whose private key is on this Mac is reused. Otherwise a new one is
++                // made – and only a certificate IVory itself made earlier (on a Mac whose key is gone) may
++                // be revoked to make room. Certificates from Xcode, AltStore, Sideloadly or anyone else
++                // are never touched: revoking them would break the apps they signed.
++                ALTCertificate *reusable = nil;
++                for (ALTCertificate *c in certs) {
++                    NSData *savedKey = loadCertKey(c.identifier);
++                    if (savedKey) { c.privateKey = savedKey; reusable = c; break; }
++                }
++                ALTCertificate *ownStale = nil;
++                for (ALTCertificate *c in certs) {
++                    if ([c.machineName isEqualToString:@"IVory"]) { ownStale = c; break; }
++                }
++                if (reusable) {
++                    NSLog(@"[Step 3] Reusing certificate %@ with its saved private key", reusable.identifier);
++                    continueWithCert(reusable);
++                } else if (ownStale) {
++                    NSLog(@"[Step 3] Replacing IVory's own certificate %@ (its key isn't on this Mac)", ownStale.identifier);
++                    [api revokeCertificate:ownStale team:team session:session completionHandler:^(BOOL ok, NSError *revokeErr) {
++                        if (!ok) NSLog(@"[Warning] Revoke failed: %@, creating a new one anyway", revokeErr);
++                        createNewCert();
++                    }];
+                 } else {
+                     createNewCert();
+                 }
+diff --git a/signer.mm b/signer.mm
+index 2550cbb..3b15f07 100644
+--- a/signer.mm
++++ b/signer.mm
+@@ -168,7 +168,7 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+     NSLog(@"[Signer] P12 generated: %lu bytes", (unsigned long)p12Data.length);
+ 
+     // Step 4: 创建临时 Keychain + 导入 P12
+-    NSString *kcPass = @"altsign";
++    NSString *kcPass = [[NSUUID UUID] UUIDString];
+     NSURL *keychainURL = [tempDir URLByAppendingPathComponent:@"sign.keychain-db"];
+ 
+     [self runTask:@"/usr/bin/security" args:@[@"create-keychain", @"-p", kcPass, keychainURL.path]];
+@@ -177,17 +177,20 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+ 
+     NSURL *p12URL = [tempDir URLByAppendingPathComponent:@"cert.p12"];
+     [p12Data writeToURL:p12URL atomically:YES];
+-    [self runTask:@"/usr/bin/security" args:@[@"import", p12URL.path, @"-k", keychainURL.path, @"-P", @"altsign",
++    [self runTask:@"/usr/bin/security" args:@[@"import", p12URL.path, @"-k", keychainURL.path, @"-P", [self.certificate p12Password],
+                                                 @"-T", @"/usr/bin/codesign", @"-T", @"/usr/bin/security"]];
+-    [self runTask:@"/usr/bin/security" args:@[@"list-keychains", @"-d", @"user", @"-s",
+-                                                keychainURL.path, @"login.keychain-db"]];
++    // The temporary keychain goes in front of the user's own list, which is put back afterwards
++    // (restoreKeychains) – replacing it would drop every keychain the user had added.
++    NSArray<NSString *> *userKeychains = [self userKeychains];
++    [self runTask:@"/usr/bin/security" args:[@[@"list-keychains", @"-d", @"user", @"-s", keychainURL.path]
++                                                 arrayByAddingObjectsFromArray:userKeychains]];
+     [self runTask:@"/usr/bin/security" args:@[@"set-key-partition-list", @"-S",
+                                                 @"apple-tool:,apple:,codesign:", @"-s", @"-k", kcPass, keychainURL.path]];
+ 
+     // 获取签名身份
+     NSString *identity = [self findSigningIdentity:keychainURL];
+     if (!identity) {
+-        [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
++        [self restoreKeychains:userKeychains]; [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
+         [fm removeItemAtURL:tempDir error:nil];
+         completion(NO, [NSError errorWithDomain:@"com.altsign.signer" code:-6
+                                        userInfo:@{NSLocalizedDescriptionKey: @"No signing identity found"}]);
+@@ -221,7 +224,7 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+             @"--keychain", keychainURL.path, @"--generate-entitlement-der", itemPath]];
+         if (status != 0) {
+             NSLog(@"[Signer] Failed to sign: %@ (exit %d)", [itemPath lastPathComponent], status);
+-            [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
++            [self restoreKeychains:userKeychains]; [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
+             [fm removeItemAtURL:tempDir error:nil];
+             completion(NO, [NSError errorWithDomain:@"com.altsign.signer" code:-7
+                                            userInfo:@{NSLocalizedDescriptionKey:
+@@ -255,7 +258,7 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+             @"--generate-entitlement-der", bundlePath]];
+         if (status != 0) {
+             NSLog(@"[Signer] Failed to sign extension: %@ (exit %d)", [bundlePath lastPathComponent], status);
+-            [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
++            [self restoreKeychains:userKeychains]; [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
+             [fm removeItemAtURL:tempDir error:nil];
+             completion(NO, [NSError errorWithDomain:@"com.altsign.signer" code:-8
+                                            userInfo:@{NSLocalizedDescriptionKey:
+@@ -280,7 +283,7 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+         @"--generate-entitlement-der", mainPath]];
+     if (status != 0) {
+         NSLog(@"[Signer] Failed to sign main app bundle (exit %d)", status);
+-        [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
++        [self restoreKeychains:userKeychains]; [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
+         [fm removeItemAtURL:tempDir error:nil];
+         completion(NO, [NSError errorWithDomain:@"com.altsign.signer" code:-9
+                                        userInfo:@{NSLocalizedDescriptionKey: @"Failed to sign main app bundle"}]);
+@@ -289,7 +292,7 @@ - (void)signPayloadInTemporaryDirectory:(NSURL *)tempDir
+     NSLog(@"[Signer] Signed app bundle");
+ 
+     // 清理 keychain
+-    [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
++    [self restoreKeychains:userKeychains]; [self runTask:@"/usr/bin/security" args:@[@"delete-keychain", keychainURL.path]];
+ 
+     // Step 6: 重新打包
+     NSLog(@"[Signer] Repacking IPA...");
+@@ -333,6 +336,30 @@ - (NSString *)findSigningIdentity:(NSURL *)keychainURL {
+     return match ? [output substringWithRange:[match rangeAtIndex:1]] : nil;
+ }
+ 
++/// The user's keychain search list, as `security list-keychains` prints it.
++- (NSArray<NSString *> *)userKeychains {
++    NSTask *task = [[NSTask alloc] init];
++    task.launchPath = @"/usr/bin/security";
++    task.arguments = @[@"list-keychains", @"-d", @"user"];
++    NSPipe *pipe = [NSPipe pipe];
++    task.standardOutput = pipe;
++    [task launch];
++    NSData *data = [pipe.fileHandleForReading readDataToEndOfFile];
++    [task waitUntilExit];
++    NSMutableArray<NSString *> *paths = [NSMutableArray array];
++    NSString *output = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
++    for (NSString *line in [output componentsSeparatedByString:@"\n"]) {
++        NSString *path = [line stringByTrimmingCharactersInSet:
++            [NSCharacterSet characterSetWithCharactersInString:@" \t\""]];
++        if (path.length > 0) [paths addObject:path];
++    }
++    return paths.count > 0 ? paths : @[@"login.keychain-db"];
++}
++
++- (void)restoreKeychains:(NSArray<NSString *> *)paths {
++    [self runTask:@"/usr/bin/security" args:[@[@"list-keychains", @"-d", @"user", @"-s"] arrayByAddingObjectsFromArray:paths]];
++}
++
+ - (int)runTask:(NSString *)launchPath args:(NSArray *)args {
+     NSTask *task = [[NSTask alloc] init];
+     task.launchPath = launchPath;

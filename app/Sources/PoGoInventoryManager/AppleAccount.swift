@@ -94,10 +94,11 @@ enum AppleAccount {
         return !appleId.isEmpty && s.appleId.caseInsensitiveCompare(appleId) == .orderedSame && s.valid
     }
 
-    /// Forgets the session, so nothing on this Mac can sign with the account any more. The signing
-    /// certificate altsign-cli made stays with Apple; it can be revoked at developer.apple.com.
+    /// Forgets the session and the signing certificate's private key, so nothing on this Mac can act on
+    /// the account any more. The certificate itself stays with Apple until it runs out (or is revoked at
+    /// developer.apple.com); the next sign-in replaces it.
     static func signOut() {
-        try? FileManager.default.removeItem(at: sessionURL)
+        try? FileManager.default.removeItem(at: sessionURL.deletingLastPathComponent())
     }
 }
 
