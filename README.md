@@ -342,10 +342,10 @@ any time.
 - What stays on the Mac is the session and the signing certificate's private key, which `altsign-cli` keeps in
   `~/Library/Application Support/altsign/` (readable by your user only, not backed up); the session lasts about a year.
   **Settings → iPhone → Sign out** deletes both.
-- Signing creates one free development certificate on your account, named *IVory*. IVory **never revokes a certificate
-  it didn't make**, so whatever Xcode, AltStore or Sideloadly signed with your Apple ID keeps working. If the account
-  already has as many certificates as Apple allows, IVory says so and asks you to free one at
-  [developer.apple.com](https://developer.apple.com/account/resources/certificates/list) instead of revoking one itself.
+- Signing creates one free development certificate on your account, named *IVory*. A free Apple ID may have only one.
+  IVory replaces its own when it needs to, but **never revokes a certificate another program made**, so whatever Xcode,
+  AltStore or Sideloadly signed with your Apple ID keeps working. If such a certificate takes the only place, IVory says
+  so: revoke it in that program (in Xcode: Settings → Accounts → Manage Certificates) or use another Apple ID.
 - `altsign-cli`'s source is part of this repository ([`vendor/`](vendor/README.md)), unchanged from
   [upstream](https://github.com/xhzq233/altsign-cli) and reviewed line by line, with IVory's changes in one patch:
   the certificate rule above, the keychain list put back after signing, nothing written to the macOS system log
