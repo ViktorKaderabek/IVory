@@ -181,12 +181,23 @@ if [ ! -x "$VENV/bin/python" ]; then
   "$RT/python/bin/python3" -m venv "$VENV" || die "$(t "Nepodařilo se vytvořit Python prostředí." "Couldn't create the Python environment.")"
 fi
 ev python done
+# The libraries come only from the lock files (scripts/lock_python.sh): every package at an exact
+# version, checked against its SHA-256, wheels only, so a release swapped on PyPI is refused. hexdump
+# has no wheel and is built with the locked setuptools instead of one pip would fetch unchecked.
+pip_locked() {  # pip_locked LOCK
+  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
+    -r "$CORE/requirements-build.lock" \
+  && "$VENV/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
+    --no-binary=hexdump --no-build-isolation -r "$CORE/$1"
+}
+# A changed lock (a new IVory) installs again, so an update reaches environments set up earlier.
+LOCK_STAMP="$VENV/.ivory-lock"
+LOCK_SHA="$(shasum -a 256 "$CORE/requirements.lock" | cut -d' ' -f1)"
+lock_current() { [ "$(cat "$LOCK_STAMP" 2>/dev/null)" = "$LOCK_SHA" ]; }
 ev devtools start
-if ! "$VENV/bin/python" -c "import pymobiledevice3" >/dev/null 2>&1; then
+if ! lock_current || ! "$VENV/bin/python" -c "import pymobiledevice3" >/dev/null 2>&1; then
   say "$(t "Instaluji nástroje pro iPhone (jen poprvé)..." "Installing the iPhone tools (first run only)...")"
-  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --upgrade pip
-  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --prefer-binary \
-    "$(grep -i '^pymobiledevice3' "$CORE/requirements.txt")" \
+  pip_locked requirements-devtools.lock \
     || die "$(t "Instalace nástrojů pro iPhone selhala." "Installing the iPhone tools failed.")"
 fi
 ev devtools done
@@ -221,11 +232,11 @@ ev appium done
 
 # --- 4) The rest of the Python libraries (image recognition, Appium client) ----
 ev libs start
-if ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation, pymobiledevice3" >/dev/null 2>&1; then
+if ! lock_current || ! "$VENV/bin/python" -c "import appium, cv2, numpy, PIL, Vision, Foundation, pymobiledevice3" >/dev/null 2>&1; then
   say "$(t "Instaluji Python knihovny (jen poprvé, pár minut)..." "Installing Python libraries (first run only, a few minutes)...")"
-  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --upgrade pip
-  "$VENV/bin/python" -m pip install -q --disable-pip-version-check --prefer-binary -r "$CORE/requirements.txt" \
+  pip_locked requirements.lock \
     || die "$(t "Instalace Python knihoven selhala." "Installing the Python libraries failed.")"
+  echo "$LOCK_SHA" > "$LOCK_STAMP"
 fi
 ev libs done
 

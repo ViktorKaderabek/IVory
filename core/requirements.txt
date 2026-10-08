@@ -1,8 +1,14 @@
-Appium-Python-Client>=4.0
-selenium>=4.20
-numpy>=1.24
-opencv-python-headless>=4.8
-pillow>=10.0
-pyobjc-framework-Cocoa>=10.0
-pyobjc-framework-Vision>=10.0
-pymobiledevice3>=11.23
+# The Python libraries the bot needs, each at the exact version IVory is tested with.
+# Users never install from this file: scripts/run.sh installs requirements.lock (and, first,
+# requirements-devtools.lock), which pin every dependency down to the last one with its SHA-256,
+# so a release swapped on PyPI can't reach anyone. After changing a version here run
+#   bash scripts/lock_python.sh
+# and commit the two .lock files with it.
+Appium-Python-Client==6.0.7
+selenium==4.50.0
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+pyobjc-framework-Cocoa==12.2.2
+pyobjc-framework-Vision==12.2.2
+pymobiledevice3==11.24.0

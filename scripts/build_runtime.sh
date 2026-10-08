@@ -22,7 +22,7 @@ XCUITEST_VERSION=12.13.3
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$ROOT/build/runtime"
 DL="$ROOT/build/downloads"
-REQ="$ROOT/core/requirements.txt"
+REQ="$ROOT/core/requirements.lock"   # scripts/lock_python.sh, every package pinned with its SHA-256
 
 case "$(uname -m)" in
   arm64)
@@ -49,7 +49,7 @@ if [ "${1:-}" = "--prune" ]; then   # only trim a runtime that is already built
   prune_python "$OUT/python"; echo "✔ Ořezáno ($(du -sh "$OUT" | cut -f1))"; exit 0
 fi
 
-# Content stamp: if neither the versions nor requirements.txt changed, the runtime isn't rebuilt.
+# Content stamp: if neither the versions nor requirements.lock changed, the runtime isn't rebuilt.
 STAMP="node $NODE_VERSION | python $PY_VERSION+$PY_RELEASE | appium $APPIUM_VERSION | xcuitest $XCUITEST_VERSION | $(uname -m) | req $(shasum -a 256 "$REQ" | cut -c1-12)"
 if [ "${1:-}" != "--force" ] && [ -f "$OUT/VERSION" ] && [ "$(head -1 "$OUT/VERSION")" = "$STAMP" ]; then
   echo "✔ Runtime je hotový ($OUT)"
@@ -99,7 +99,9 @@ echo "▶ Python $PY_VERSION a knihovny"
 fetch "https://github.com/astral-sh/python-build-standalone/releases/download/$PY_RELEASE/${PY_PKG/+/%2B}.tar.gz" "$PY_PKG.tar.gz" "$PY_SHA"
 tar -xzf "$DL/$PY_PKG.tar.gz" -C "$TMP"   # extracts into python/
 PIP_CACHE_DIR="$DL/pip-cache" "$TMP/python/bin/python3" -m pip install --disable-pip-version-check -q \
-  --only-binary=:all: -r "$REQ"
+  --require-hashes --only-binary=:all: -r "$ROOT/core/requirements-build.lock"
+PIP_CACHE_DIR="$DL/pip-cache" "$TMP/python/bin/python3" -m pip install --disable-pip-version-check -q \
+  --require-hashes --only-binary=:all: --no-binary=hexdump --no-build-isolation -r "$REQ"
 prune_python "$TMP/python"
 "$TMP/python/bin/python3" -c "import appium, selenium, cv2, numpy, PIL, Vision, Foundation; print('  knihovny OK: OpenCV', cv2.__version__, '| NumPy', numpy.__version__)"
 "$TMP/python/bin/python3" -m compileall -q "$SITE" >/dev/null 2>&1 || true
