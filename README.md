@@ -272,7 +272,7 @@ new or have changed. The log ends each reading with a ⏱ line that says how lon
 | 4 | Python libraries: Appium client, pymobiledevice3, OpenCV, NumPy, Pillow, PyObjC (Apple Vision) | `~/.pogo/venv` |
 | 5 | WebDriverAgent, signed for your iPhone with your Apple ID | `~/.pogo/runtime`, and the iPhone |
 
-Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI (`core/requirements.txt`). It takes a few minutes, needs no password and is skipped on later starts.
+Node.js and Python are pinned to exact versions and checked against SHA-256 checksums, Appium and the XCUITest driver are pinned to exact versions, and the Python libraries come from PyPI at exact versions, each file checked against the SHA-256 in `core/requirements.lock`, so a package swapped on PyPI is refused. It takes a few minutes, needs no password and is skipped on later starts.
 WebDriverAgent ships with IVory already built, so nothing is compiled on your Mac. IVory only signs it for your iPhone — a development signature is tied to the exact device, so it can't be made in advance — and installs it. That takes a few seconds.
 
 </details>
@@ -512,7 +512,9 @@ core/pogo_bot.py     the bot's entry point
 core/ivory/          the bot, in small layered modules (the map is in core/ivory/__init__.py)
 core/pokecalc.py     CP and PvP math
 core/pokedata.py     downloads the game data (PvPoke, PokeMiners) into ~/.pogo/pokedata.json
+core/requirements.*  the Python libraries: .txt lists them, the .lock files pin every dependency with its SHA-256
 scripts/run.sh       sets up the tools on the first start, starts Appium and the bot
+scripts/lock_python.sh      regenerates the .lock files after a change to core/requirements.txt
 scripts/build_dmg.sh builds dist/IVory.dmg
 scripts/build_runtime.sh    builds a self-contained Node/Appium/Python runtime into build/
 tests/               phone simulators and tests (see tests/README.md)
