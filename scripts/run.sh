@@ -182,17 +182,22 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 ev python done
 # The libraries come only from the lock files (scripts/lock_python.sh): every package at an exact
-# version, checked against its SHA-256, wheels only, so a release swapped on PyPI is refused. hexdump
-# has no wheel and is built with the locked setuptools instead of one pip would fetch unchecked.
+# version, checked against its SHA-256, wheels only, so a release swapped on PyPI is refused. The
+# build lock goes first: it brings pip up to its locked version, and the locked setuptools hexdump
+# (no wheel on PyPI) is built with, instead of one pip would fetch unchecked.
+BUILD_READY=0
 pip_locked() {  # pip_locked LOCK
+  if [ "$BUILD_READY" = 0 ]; then
+    "$VENV/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
+      -r "$CORE/requirements-build.lock" || return 1
+    BUILD_READY=1
+  fi
   "$VENV/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
-    -r "$CORE/requirements-build.lock" \
-  && "$VENV/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
     --no-binary=hexdump --no-build-isolation -r "$CORE/$1"
 }
 # A changed lock (a new IVory) installs again, so an update reaches environments set up earlier.
 LOCK_STAMP="$VENV/.ivory-lock"
-LOCK_SHA="$(shasum -a 256 "$CORE/requirements.lock" | cut -d' ' -f1)"
+LOCK_SHA="$(cat "$CORE/requirements-build.lock" "$CORE/requirements.lock" | shasum -a 256 | cut -d' ' -f1)"
 lock_current() { [ "$(cat "$LOCK_STAMP" 2>/dev/null)" = "$LOCK_SHA" ]; }
 ev devtools start
 if ! lock_current || ! "$VENV/bin/python" -c "import pymobiledevice3" >/dev/null 2>&1; then

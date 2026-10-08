@@ -3,7 +3,7 @@
 #  Regenerates the lock files scripts/run.sh installs the Python libraries from:
 #    core/requirements.lock           everything in core/requirements.txt
 #    core/requirements-devtools.lock  the part the setup guide needs first (pymobiledevice3)
-#    core/requirements-build.lock     setuptools, to build hexdump (PyPI has no wheel for it)
+#    core/requirements-build.lock     pip itself, and setuptools to build hexdump (PyPI has no wheel for it)
 #  Every dependency is at an exact version with the SHA-256 of each of its files, resolved
 #  for the Python IVory ships (3.12) on macOS 14+, Apple Silicon and Intel, wheels only.
 #  run.sh installs them with --require-hashes, so nothing unlisted or swapped gets in.
@@ -18,6 +18,7 @@ set -euo pipefail
 
 UV_VERSION=0.12.23
 SETUPTOOLS_VERSION=84.0.0
+PIP_VERSION=26.2.1                       # replaces the one Python bundles (25.0.1, with known advisories)
 PY_VERSION=3.12
 export MACOSX_DEPLOYMENT_TARGET=14.0     # the oldest macOS IVory runs on (LSMinimumSystemVersion)
 SDIST_ONLY=hexdump                       # built from source with the locked setuptools
@@ -36,8 +37,8 @@ UPGRADE=()
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# resolve ARCH INPUT OUTPUT [uv args]: one architecture, with hashes. The lock already in OUTPUT's
-# place is copied there first, because uv keeps the versions it finds in its output file.
+# resolve ARCH INPUT OUTPUT PREVIOUS [uv args]: one architecture, with hashes. PREVIOUS (the lock
+# as it was) is copied to OUTPUT first, because uv keeps the versions it finds in its output file.
 resolve() {
   local arch="$1" in="$2" out="$3" previous="$4"; shift 4
   [ -f "$previous" ] && cp "$previous" "$out"
@@ -107,7 +108,7 @@ echo "▶ Zamykám core/requirements-devtools.lock"
 grep -i '^pymobiledevice3==' "$CORE/requirements.txt" > "$WORK/devtools.in"
 lock "$WORK/devtools.in" "$CORE/requirements-devtools.lock" requirements.lock
 echo "▶ Zamykám core/requirements-build.lock"
-echo "setuptools==$SETUPTOOLS_VERSION" > "$WORK/build.in"
+printf "pip==%s\nsetuptools==%s\n" "$PIP_VERSION" "$SETUPTOOLS_VERSION" > "$WORK/build.in"
 lock "$WORK/build.in" "$CORE/requirements-build.lock"
 echo "✔ Hotovo: $(grep -c '^[a-zA-Z]' "$CORE/requirements.lock") řádků v requirements.lock," \
   "$(grep -c 'platform_machine' "$CORE/requirements.lock") podle architektury"
